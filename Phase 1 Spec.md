@@ -1,6 +1,6 @@
 # Phase 1 Specification
  
-**Status:** In development
+**Status:** Completed
 **Goal:** A functional RSVP reader capable of loading a `.txt` file and streaming its contents at a configurable WPM with pause, resume, and rewind. Reading position persists across sessions.
  
 This document is the working specification for Phase 1. It defines scope, architecture, data structures, and the intended build order. Anything not listed here is out of scope for Phase 1 and belongs to a later phase.
