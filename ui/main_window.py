@@ -8,6 +8,7 @@ persistence to the storage package.
 
 from __future__ import annotations
 
+import hashlib
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
@@ -17,6 +18,7 @@ from core.timing import clamp_wpm, delay_ms
 from importers.registry import all_extensions, find_importer
 from storage import config as config_store
 from storage import progress as progress_store
+from ui.dialogs import ask_file_changed
 from ui.reader_view import ReaderView
 from ui.theme import DARK, LIGHT, Theme, get_theme
 
@@ -31,6 +33,16 @@ REWIND_TOKENS = 5
 # How often during playback to persist the current position, measured
 # in tokens. Spec requires every ~100 tokens.
 PROGRESS_CHECKPOINT_EVERY = 100
+
+
+def _hash_source(text: str) -> str:
+    """Return the hex SHA-256 of the canonical source text, UTF-8 encoded.
+
+    Hashing the tokenizer input (not raw file bytes) means a .docx whose
+    internal XML shuffles but whose extracted text is identical still
+    reads as "the same reading material."
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class MainWindow:
@@ -181,27 +193,37 @@ class MainWindow:
     def _load_file(self, path: Path) -> None:
         importer = find_importer(path)
         if importer is None:
-            # Phase 1: no error dialogs, just a console message.
             print(f"No importer for {path.suffix!r}")
             return
 
         try:
-            # Step 1: importers now return (canonical_text, tokens).
-            # We accept the text here but don't yet store it on the
-            # Session - that's step 2. Leading underscore marks it as
-            # a deliberately-unused local.
-            _source_text, tokens = importer.load(path)
-        except Exception as e:  # Intentionally broad for Phase 1.
+            source_text, tokens = importer.load(path)
+        except Exception as e:  # Intentionally broad; no error dialogs yet.
             print(f"Failed to load {path}: {e}")
             return
 
         # Stop any in-flight playback before swapping the token stream.
         self.session.is_playing = False
         resolved = str(path.resolve())
+        source_hash = _hash_source(source_text)
+
+        # Decide where to start before mutating the Session - this way,
+        # if the user cancels the dialog, nothing is half-loaded.
+        position = self._resolve_resume_position(
+            resolved, source_hash, len(tokens), path.name
+        )
+
         self.session.tokens = tokens
-        self.session.position = self._load_progress_for(resolved)
+        self.session.source_text = source_text
+        self.session.source_hash = source_hash
         self.session.file_path = resolved
+        self.session.position = position
         self._tokens_since_checkpoint = 0
+
+        # Persist immediately with the (possibly new) hash. This is what
+        # migrates legacy entries forward without prompting on next open,
+        # and also makes the "resume anyway" case stick.
+        progress_store.set_entry(resolved, position, source_hash)
 
         # Show the word at the resumed position so the user sees where
         # they are, instead of a blank screen.
@@ -213,6 +235,52 @@ class MainWindow:
 
         self._refresh_status()
         self._update_play_button()
+
+    def _resolve_resume_position(self, file_path: str, source_hash: str,
+                                  token_count: int, display_name: str) -> int:
+        """Decide the starting position for a freshly loaded file.
+
+        Consults the stored progress entry, compares hashes, and prompts
+        the user on mismatch. Returns a token index clamped to the
+        current stream's bounds.
+
+        Clamping is belt-and-suspenders even with the hash check: the
+        same source text could produce a different token count across
+        RSVPy versions if tokenizer logic changes (Phase 5 ORP work is
+        a likely trigger), so we defend against a future-version
+        IndexError even when the hash matches.
+        """
+        if token_count == 0:
+            return 0
+
+        entry = progress_store.get_entry(file_path)
+        if entry is None:
+            # Never opened before.
+            return 0
+
+        stored_pos = int(entry.get("position", 0))
+        stored_hash = entry.get("hash")
+
+        if stored_hash is None:
+            # Phase 1 migration path: no validation possible, resume
+            # silently. Next save writes a real hash, so this branch
+            # only fires once per legacy file.
+            return _clamp(stored_pos, token_count)
+
+        if stored_hash == source_hash:
+            return _clamp(stored_pos, token_count)
+
+        # Hash mismatch: ask the user what to do. Show the percentage
+        # they'd be resuming at, which is more meaningful than a raw
+        # token count.
+        progress_pct = int(round(100 * (stored_pos + 1) / token_count))
+        choice = ask_file_changed(
+            self.root, self._theme, display_name, progress_pct,
+        )
+        if choice == "resume":
+            return _clamp(stored_pos, token_count)
+        # "restart" or any unexpected value - start from the top.
+        return 0
 
     # --- Playback -------------------------------------------------------------
 
@@ -311,10 +379,6 @@ class MainWindow:
         self.root.destroy()
 
     # --- Persistence ----------------------------------------------------------
-    # Thin wrappers around the storage package. Keeping them as methods
-    # (rather than inlining the calls at every site) means UI code stays
-    # ignorant of the storage module layout, and a future switch to,
-    # say, SQLite would only touch these four methods.
 
     def _load_config(self) -> dict:
         return config_store.load_config()
@@ -325,25 +389,24 @@ class MainWindow:
             "dark_mode": self._theme.name == "dark",
         })
 
-    def _load_progress_for(self, file_path: str) -> int:
-        stored = progress_store.get_position(file_path)
-        # Clamp into the current token stream's bounds. Even in Phase 2
-        # where a hash check guards against file changes, we keep this:
-        # the same source text could produce a different token count
-        # across RSVPy versions if tokenizer logic ever changes (Phase 5
-        # ORP work is a likely trigger), so this is a cheap defense
-        # against future-version IndexErrors.
-        if not self.session.tokens:
-            return 0
-        return max(0, min(stored, len(self.session.tokens) - 1))
-
     def _save_progress(self) -> None:
         # No file loaded → nothing to record. Avoids writing an
         # empty-string key into progress.json on app close before the
         # user opens anything.
         if not self.session.file_path:
             return
-        progress_store.set_position(self.session.file_path, self.session.position)
+        progress_store.set_entry(
+            self.session.file_path,
+            self.session.position,
+            self.session.source_hash,
+        )
+
+
+def _clamp(position: int, token_count: int) -> int:
+    """Clamp a position into [0, token_count-1]. Empty streams map to 0."""
+    if token_count <= 0:
+        return 0
+    return max(0, min(position, token_count - 1))
 
 
 def launch() -> None:

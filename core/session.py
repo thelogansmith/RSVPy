@@ -4,6 +4,12 @@ Session: holds the in-memory reading state.
 Position is an index into the token list, never a byte offset or character
 count. This keeps rewind, progress tracking, and future features like
 jump-to-sentence trivial.
+
+As of Phase 2, the Session also carries the canonical source text and
+its SHA-256 hash. The hash backs the stale-position detection that
+prompts the user on file-changed reopens. The source text itself is
+unused in Phase 2 beyond hashing; Phase 3's context window will consume
+it, reading token.source_start / source_end into this string.
 """
 
 from dataclasses import dataclass, field
@@ -15,6 +21,8 @@ from core.timing import clamp_wpm
 @dataclass
 class Session:
     tokens: list[Token] = field(default_factory=list)
+    source_text: str = ""
+    source_hash: str = ""
     position: int = 0
     wpm: int = 300
     is_playing: bool = False
