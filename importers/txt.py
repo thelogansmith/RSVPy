@@ -22,7 +22,7 @@ class TxtImporter(Importer):
     def can_handle(self, path: Path) -> bool:
         return path.suffix.lower() in self.extensions
 
-    def load(self, path: Path) -> list[Token]:
+    def load(self, path: Path) -> tuple[str, list[Token]]:
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -30,4 +30,4 @@ class TxtImporter(Importer):
             # never raises, so this is a safe last resort even if a few
             # characters end up wrong.
             text = path.read_text(encoding="latin-1")
-        return tokenize(text)
+        return text, tokenize(text)
