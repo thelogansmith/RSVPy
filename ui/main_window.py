@@ -186,7 +186,11 @@ class MainWindow:
             return
 
         try:
-            tokens = importer.load(path)
+            # Step 1: importers now return (canonical_text, tokens).
+            # We accept the text here but don't yet store it on the
+            # Session - that's step 2. Leading underscore marks it as
+            # a deliberately-unused local.
+            _source_text, tokens = importer.load(path)
         except Exception as e:  # Intentionally broad for Phase 1.
             print(f"Failed to load {path}: {e}")
             return
@@ -323,10 +327,12 @@ class MainWindow:
 
     def _load_progress_for(self, file_path: str) -> int:
         stored = progress_store.get_position(file_path)
-        # Clamp into the current token stream's bounds. Guards against
-        # a progress file that was written for an older, longer version
-        # of the same file (e.g. the user trimmed it), which would
-        # otherwise resume past the end.
+        # Clamp into the current token stream's bounds. Even in Phase 2
+        # where a hash check guards against file changes, we keep this:
+        # the same source text could produce a different token count
+        # across RSVPy versions if tokenizer logic ever changes (Phase 5
+        # ORP work is a likely trigger), so this is a cheap defense
+        # against future-version IndexErrors.
         if not self.session.tokens:
             return 0
         return max(0, min(stored, len(self.session.tokens) - 1))
