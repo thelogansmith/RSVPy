@@ -1,4 +1,3 @@
-Phase 1 · MD
 # Phase 1 Specification
  
 **Status:** In development
