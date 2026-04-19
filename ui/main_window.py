@@ -2,11 +2,8 @@
 Main window.
 
 Owns the Session, the Tk root, and the play loop. Delegates word
-display to ReaderView and file parsing to the importer registry.
-
-Persistence (config.py, progress.py) will be wired into the marked
-hook methods during Phase 1 step 5. The hooks are stubs right now so
-that the window runs standalone during steps 2-4.
+display to ReaderView, file parsing to the importer registry, and
+persistence to the storage package.
 """
 
 from __future__ import annotations
@@ -16,8 +13,10 @@ from pathlib import Path
 from tkinter import filedialog
 
 from core.session import Session
-from core.timing import MAX_WPM, MIN_WPM, clamp_wpm, delay_ms
+from core.timing import clamp_wpm, delay_ms
 from importers.registry import all_extensions, find_importer
+from storage import config as config_store
+from storage import progress as progress_store
 from ui.reader_view import ReaderView
 from ui.theme import DARK, LIGHT, Theme, get_theme
 
@@ -41,7 +40,7 @@ class MainWindow:
         self.session = Session()
         self._tokens_since_checkpoint = 0
 
-        # Load persisted config. Swapped for real implementation in step 5.
+        # Load persisted config.
         cfg = self._load_config()
         self.session.wpm = clamp_wpm(cfg.get("wpm", 300))
         self._theme: Theme = get_theme(cfg.get("dark_mode", True))
@@ -194,9 +193,10 @@ class MainWindow:
 
         # Stop any in-flight playback before swapping the token stream.
         self.session.is_playing = False
+        resolved = str(path.resolve())
         self.session.tokens = tokens
-        self.session.position = self._load_progress_for(str(path.resolve()))
-        self.session.file_path = str(path.resolve())
+        self.session.position = self._load_progress_for(resolved)
+        self.session.file_path = resolved
         self._tokens_since_checkpoint = 0
 
         # Show the word at the resumed position so the user sees where
@@ -306,22 +306,38 @@ class MainWindow:
         self._save_config()
         self.root.destroy()
 
-    # --- Persistence hooks ----------------------------------------------------
-    # Stubs until step 5. Implementing storage/config.py and
-    # storage/progress.py means replacing the bodies of these four
-    # methods; no other code in this file needs to change.
+    # --- Persistence ----------------------------------------------------------
+    # Thin wrappers around the storage package. Keeping them as methods
+    # (rather than inlining the calls at every site) means UI code stays
+    # ignorant of the storage module layout, and a future switch to,
+    # say, SQLite would only touch these four methods.
 
     def _load_config(self) -> dict:
-        return {"wpm": 300, "dark_mode": True}
+        return config_store.load_config()
 
     def _save_config(self) -> None:
-        pass
+        config_store.save_config({
+            "wpm": self.session.wpm,
+            "dark_mode": self._theme.name == "dark",
+        })
 
     def _load_progress_for(self, file_path: str) -> int:
-        return 0
+        stored = progress_store.get_position(file_path)
+        # Clamp into the current token stream's bounds. Guards against
+        # a progress file that was written for an older, longer version
+        # of the same file (e.g. the user trimmed it), which would
+        # otherwise resume past the end.
+        if not self.session.tokens:
+            return 0
+        return max(0, min(stored, len(self.session.tokens) - 1))
 
     def _save_progress(self) -> None:
-        pass
+        # No file loaded → nothing to record. Avoids writing an
+        # empty-string key into progress.json on app close before the
+        # user opens anything.
+        if not self.session.file_path:
+            return
+        progress_store.set_position(self.session.file_path, self.session.position)
 
 
 def launch() -> None:
