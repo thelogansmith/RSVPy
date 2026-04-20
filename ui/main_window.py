@@ -21,6 +21,7 @@ from storage import progress as progress_store
 from storage import stats as stats_store
 from ui.dialogs import ask_file_changed, ask_restart_confirm
 from ui.reader_view import ReaderView
+from ui.recents_window import RecentsWindow
 from ui.theme import DARK, LIGHT, Theme, get_theme
 
 
@@ -82,6 +83,13 @@ class MainWindow:
 
         self.progress_label = tk.Label(self.status_bar, anchor="e", padx=10)
         self.progress_label.pack(side="right", fill="y")
+
+        # Recent and Stats buttons in the status bar.
+        self.recent_btn = tk.Button(
+            self.status_bar, text="Recent", bd=0, padx=6,
+            command=self._on_recents,
+        )
+        self.recent_btn.pack(side="right", fill="y", padx=2)
 
         # Control bar (bottom) ------------------------------------------------
         self.control_bar = tk.Frame(self.root, height=50)
@@ -157,6 +165,7 @@ class MainWindow:
         self.root.bind("<Right>", lambda _e: self._on_skip())
         self.root.bind("<Home>", lambda _e: self._on_restart())
         self.root.bind("<Control-o>", lambda _e: self._on_open())
+        self.root.bind("<Control-r>", lambda _e: self._on_recents())
 
     # --- Theming --------------------------------------------------------------
 
@@ -190,6 +199,13 @@ class MainWindow:
         ):
             btn.config(bg=surface, fg=text, activebackground=bg, activeforeground=text,
                        highlightbackground=surface, relief="flat")
+
+        # Status bar buttons get a subtler look.
+        self.recent_btn.config(
+            bg=surface, fg=muted,
+            activebackground=bg, activeforeground=text,
+            highlightbackground=surface,
+        )
 
         self.theme_btn.config(text="☀" if theme.name == "dark" else "🌙")
         self.reader_view.apply_theme(theme)
@@ -243,8 +259,6 @@ class MainWindow:
 
         progress_store.set_entry(resolved, position, source_hash)
 
-        # Record this open in stats. One session increment per file
-        # open, not per play/pause cycle.
         stats_store.record_file_open(resolved)
         stats_store.flush_stats()
 
@@ -284,6 +298,12 @@ class MainWindow:
             return _clamp(stored_pos, token_count)
         return 0
 
+    # --- Recents --------------------------------------------------------------
+
+    def _on_recents(self) -> None:
+        """Open the recent files window."""
+        RecentsWindow(self.root, self._theme, self._load_file)
+
     # --- Playback -------------------------------------------------------------
 
     def _on_play_pause(self) -> None:
@@ -319,11 +339,11 @@ class MainWindow:
         self.reader_view.show(token.text)
         self._refresh_status()
 
-        # Record this token in stats. tick_seconds is the nominal
-        # display time, not wall-clock - so laggy machines don't
-        # inflate the number.
         tick_seconds = delay_ms(self.session.wpm) / 1000.0
-        stats_store.record_tick(self.session.file_path, tick_seconds)
+        progress_pct = int(self.session.progress() * 100)
+        stats_store.record_tick(
+            self.session.file_path, tick_seconds, progress_pct
+        )
 
         self.session.advance()
         self._tokens_since_checkpoint += 1
@@ -436,8 +456,6 @@ class MainWindow:
             self.session.position,
             self.session.source_hash,
         )
-        # Stats flush at the same cadence as progress: checkpoint,
-        # pause, and close. Avoids a second I/O loop.
         stats_store.flush_stats()
 
 
