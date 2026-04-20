@@ -18,6 +18,7 @@ from core.timing import clamp_wpm, delay_ms
 from importers.registry import all_extensions, find_importer
 from storage import config as config_store
 from storage import progress as progress_store
+from storage import stats as stats_store
 from ui.dialogs import ask_file_changed, ask_restart_confirm
 from ui.reader_view import ReaderView
 from ui.theme import DARK, LIGHT, Theme, get_theme
@@ -31,8 +32,6 @@ WINDOW_HEIGHT = 300
 WPM_STEP = 25
 REWIND_TOKENS = 5
 SKIP_TOKENS = 5
-# How often during playback to persist the current position, measured
-# in tokens. Spec requires every ~100 tokens.
 PROGRESS_CHECKPOINT_EVERY = 100
 
 
@@ -48,7 +47,6 @@ class MainWindow:
         self.session = Session()
         self._tokens_since_checkpoint = 0
 
-        # Load persisted config.
         cfg = self._load_config()
         self.session.wpm = clamp_wpm(cfg.get("wpm", 300))
         self._theme: Theme = get_theme(cfg.get("dark_mode", True))
@@ -86,10 +84,6 @@ class MainWindow:
         self.progress_label.pack(side="right", fill="y")
 
         # Control bar (bottom) ------------------------------------------------
-        # Three zones: Open on the left, transport centered, WPM+theme
-        # on the right. Using a sub-frame for the transport group so
-        # pack(side="left") + pack(side="right") leaves the center frame
-        # naturally balanced in the remaining space.
         self.control_bar = tk.Frame(self.root, height=50)
         self.control_bar.pack(side="bottom", fill="x")
         self.control_bar.pack_propagate(False)
@@ -125,15 +119,11 @@ class MainWindow:
         self.wpm_prefix_label = tk.Label(self.control_bar, text="WPM:")
         self.wpm_prefix_label.pack(side="right", padx=(4, 1), pady=8)
 
-        # Center zone: transport buttons inside a sub-frame. The frame
-        # fills whatever space remains between Open and the WPM cluster,
-        # and its children are packed centrally via place() or inner pack.
+        # Center zone: transport buttons.
         transport = tk.Frame(self.control_bar)
         transport.pack(side="left", fill="both", expand=True, pady=4)
         self._transport_frame = transport
 
-        # Inner frame to hold the actual buttons, centered in the transport
-        # zone. place() centers it regardless of how wide the parent is.
         inner = tk.Frame(transport)
         inner.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -189,7 +179,6 @@ class MainWindow:
         ):
             label.config(bg=surface, fg=muted if label is not self.filename_label else text)
 
-        # Transport frame and its children need theming too.
         self._transport_frame.config(bg=surface)
         for child in self._transport_frame.winfo_children():
             child.config(bg=surface)
@@ -253,6 +242,11 @@ class MainWindow:
         self._tokens_since_checkpoint = 0
 
         progress_store.set_entry(resolved, position, source_hash)
+
+        # Record this open in stats. One session increment per file
+        # open, not per play/pause cycle.
+        stats_store.record_file_open(resolved)
+        stats_store.flush_stats()
 
         current = self.session.current_token()
         if current is not None:
@@ -324,6 +318,12 @@ class MainWindow:
 
         self.reader_view.show(token.text)
         self._refresh_status()
+
+        # Record this token in stats. tick_seconds is the nominal
+        # display time, not wall-clock - so laggy machines don't
+        # inflate the number.
+        tick_seconds = delay_ms(self.session.wpm) / 1000.0
+        stats_store.record_tick(self.session.file_path, tick_seconds)
 
         self.session.advance()
         self._tokens_since_checkpoint += 1
@@ -436,6 +436,9 @@ class MainWindow:
             self.session.position,
             self.session.source_hash,
         )
+        # Stats flush at the same cadence as progress: checkpoint,
+        # pause, and close. Avoids a second I/O loop.
+        stats_store.flush_stats()
 
 
 def _clamp(position: int, token_count: int) -> int:
