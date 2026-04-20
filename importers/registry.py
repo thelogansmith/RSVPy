@@ -11,6 +11,7 @@ else changes.
 from pathlib import Path
 
 from importers.base import Importer
+from importers.docx import DocxImporter
 from importers.md import MarkdownImporter
 from importers.txt import TxtImporter
 
@@ -19,6 +20,7 @@ from importers.txt import TxtImporter
 _IMPORTERS: list[Importer] = [
     TxtImporter(),
     MarkdownImporter(),
+    DocxImporter(),
 ]
 
 
