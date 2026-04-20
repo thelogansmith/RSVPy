@@ -26,7 +26,7 @@ from ui.theme import DARK, LIGHT, Theme, get_theme
 # --- Layout constants ---------------------------------------------------------
 
 WINDOW_TITLE = "RSVPy"
-WINDOW_WIDTH = 600
+WINDOW_WIDTH = 700
 WINDOW_HEIGHT = 300
 WPM_STEP = 25
 REWIND_TOKENS = 5
@@ -37,12 +37,7 @@ PROGRESS_CHECKPOINT_EVERY = 100
 
 
 def _hash_source(text: str) -> str:
-    """Return the hex SHA-256 of the canonical source text, UTF-8 encoded.
-
-    Hashing the tokenizer input (not raw file bytes) means a .docx whose
-    internal XML shuffles but whose extracted text is identical still
-    reads as "the same reading material."
-    """
+    """Return the hex SHA-256 of the canonical source text, UTF-8 encoded."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -57,8 +52,6 @@ class MainWindow:
         cfg = self._load_config()
         self.session.wpm = clamp_wpm(cfg.get("wpm", 300))
         self._theme: Theme = get_theme(cfg.get("dark_mode", True))
-        # Whether to prompt before restart. Flipped off by the "don't
-        # ask again" checkbox in the restart dialog.
         self._restart_confirm: bool = bool(cfg.get("restart_confirm", True))
 
         self._build_window()
@@ -93,46 +86,26 @@ class MainWindow:
         self.progress_label.pack(side="right", fill="y")
 
         # Control bar (bottom) ------------------------------------------------
-        self.control_bar = tk.Frame(self.root, height=44)
+        # Three zones: Open on the left, transport centered, WPM+theme
+        # on the right. Using a sub-frame for the transport group so
+        # pack(side="left") + pack(side="right") leaves the center frame
+        # naturally balanced in the remaining space.
+        self.control_bar = tk.Frame(self.root, height=50)
         self.control_bar.pack(side="bottom", fill="x")
         self.control_bar.pack_propagate(False)
 
-        # Left cluster: Open, then transport (restart, rewind, play, skip).
+        # Left zone: Open button.
         self.open_btn = tk.Button(
             self.control_bar, text="Open", width=6, command=self._on_open
         )
-        self.open_btn.pack(side="left", padx=(10, 8), pady=8)
+        self.open_btn.pack(side="left", padx=(10, 0), pady=8)
 
-        # Transport buttons - glyph-only to fit in the 600px window.
-        # If these ever feel cramped we widen the window in step 8 when
-        # the recents button joins them.
-        self.restart_btn = tk.Button(
-            self.control_bar, text="⏮", width=2, command=self._on_restart
-        )
-        self.restart_btn.pack(side="left", padx=1, pady=8)
-
-        self.rewind_btn = tk.Button(
-            self.control_bar, text="⏪", width=2, command=self._on_rewind
-        )
-        self.rewind_btn.pack(side="left", padx=1, pady=8)
-
-        # Play button is wider to absorb the "▶ Play" / "⏸ Pause" text swap.
-        self.play_btn = tk.Button(
-            self.control_bar, text="▶", width=3, command=self._on_play_pause
-        )
-        self.play_btn.pack(side="left", padx=1, pady=8)
-
-        self.skip_btn = tk.Button(
-            self.control_bar, text="⏩", width=2, command=self._on_skip
-        )
-        self.skip_btn.pack(side="left", padx=1, pady=8)
-
-        # Right cluster: theme toggle, then WPM stepper (packed right-to-left).
+        # Right zone: theme toggle + WPM stepper (packed right-to-left).
         self.theme_btn = tk.Button(
             self.control_bar, text="☀" if self._theme.name == "dark" else "🌙",
             width=3, command=self._on_toggle_theme,
         )
-        self.theme_btn.pack(side="right", padx=(6, 10), pady=8)
+        self.theme_btn.pack(side="right", padx=(4, 10), pady=8)
 
         self.wpm_plus_btn = tk.Button(
             self.control_bar, text="+", width=2,
@@ -147,10 +120,42 @@ class MainWindow:
             self.control_bar, text="−", width=2,
             command=lambda: self._adjust_wpm(-WPM_STEP),
         )
-        self.wpm_minus_btn.pack(side="right", padx=(6, 1), pady=8)
+        self.wpm_minus_btn.pack(side="right", padx=1, pady=8)
 
         self.wpm_prefix_label = tk.Label(self.control_bar, text="WPM:")
-        self.wpm_prefix_label.pack(side="right", padx=(6, 1), pady=8)
+        self.wpm_prefix_label.pack(side="right", padx=(4, 1), pady=8)
+
+        # Center zone: transport buttons inside a sub-frame. The frame
+        # fills whatever space remains between Open and the WPM cluster,
+        # and its children are packed centrally via place() or inner pack.
+        transport = tk.Frame(self.control_bar)
+        transport.pack(side="left", fill="both", expand=True, pady=4)
+        self._transport_frame = transport
+
+        # Inner frame to hold the actual buttons, centered in the transport
+        # zone. place() centers it regardless of how wide the parent is.
+        inner = tk.Frame(transport)
+        inner.place(relx=0.5, rely=0.5, anchor="center")
+
+        self.restart_btn = tk.Button(
+            inner, text="⏮ Start", width=6, command=self._on_restart
+        )
+        self.restart_btn.pack(side="left", padx=2)
+
+        self.rewind_btn = tk.Button(
+            inner, text="⏪ Back", width=6, command=self._on_rewind
+        )
+        self.rewind_btn.pack(side="left", padx=2)
+
+        self.play_btn = tk.Button(
+            inner, text="▶ Play", width=7, command=self._on_play_pause
+        )
+        self.play_btn.pack(side="left", padx=2)
+
+        self.skip_btn = tk.Button(
+            inner, text="Skip ⏩", width=6, command=self._on_skip
+        )
+        self.skip_btn.pack(side="left", padx=2)
 
         # Reader view (fills remaining space) ---------------------------------
         self.reader_view = ReaderView(self.root, self._theme)
@@ -184,8 +189,11 @@ class MainWindow:
         ):
             label.config(bg=surface, fg=muted if label is not self.filename_label else text)
 
-        # Buttons: Tk on macOS ignores bg on native buttons, but setting
-        # it works on Windows and Linux and does no harm on macOS.
+        # Transport frame and its children need theming too.
+        self._transport_frame.config(bg=surface)
+        for child in self._transport_frame.winfo_children():
+            child.config(bg=surface)
+
         for btn in (
             self.open_btn, self.restart_btn, self.rewind_btn,
             self.play_btn, self.skip_btn, self.theme_btn,
@@ -225,17 +233,14 @@ class MainWindow:
 
         try:
             source_text, tokens = importer.load(path)
-        except Exception as e:  # Intentionally broad; no error dialogs yet.
+        except Exception as e:
             print(f"Failed to load {path}: {e}")
             return
 
-        # Stop any in-flight playback before swapping the token stream.
         self.session.is_playing = False
         resolved = str(path.resolve())
         source_hash = _hash_source(source_text)
 
-        # Decide where to start before mutating the Session - this way,
-        # if the user cancels the dialog, nothing is half-loaded.
         position = self._resolve_resume_position(
             resolved, source_hash, len(tokens), path.name
         )
@@ -247,13 +252,8 @@ class MainWindow:
         self.session.position = position
         self._tokens_since_checkpoint = 0
 
-        # Persist immediately with the (possibly new) hash. This is what
-        # migrates legacy entries forward without prompting on next open,
-        # and also makes the "resume anyway" case stick.
         progress_store.set_entry(resolved, position, source_hash)
 
-        # Show the word at the resumed position so the user sees where
-        # they are, instead of a blank screen.
         current = self.session.current_token()
         if current is not None:
             self.reader_view.show(current.text)
@@ -265,48 +265,29 @@ class MainWindow:
 
     def _resolve_resume_position(self, file_path: str, source_hash: str,
                                   token_count: int, display_name: str) -> int:
-        """Decide the starting position for a freshly loaded file.
-
-        Consults the stored progress entry, compares hashes, and prompts
-        the user on mismatch. Returns a token index clamped to the
-        current stream's bounds.
-
-        Clamping is belt-and-suspenders even with the hash check: the
-        same source text could produce a different token count across
-        RSVPy versions if tokenizer logic changes (Phase 5 ORP work is
-        a likely trigger), so we defend against a future-version
-        IndexError even when the hash matches.
-        """
+        """Decide the starting position for a freshly loaded file."""
         if token_count == 0:
             return 0
 
         entry = progress_store.get_entry(file_path)
         if entry is None:
-            # Never opened before.
             return 0
 
         stored_pos = int(entry.get("position", 0))
         stored_hash = entry.get("hash")
 
         if stored_hash is None:
-            # Phase 1 migration path: no validation possible, resume
-            # silently. Next save writes a real hash, so this branch
-            # only fires once per legacy file.
             return _clamp(stored_pos, token_count)
 
         if stored_hash == source_hash:
             return _clamp(stored_pos, token_count)
 
-        # Hash mismatch: ask the user what to do. Show the percentage
-        # they'd be resuming at, which is more meaningful than a raw
-        # token count.
         progress_pct = int(round(100 * (stored_pos + 1) / token_count))
         choice = ask_file_changed(
             self.root, self._theme, display_name, progress_pct,
         )
         if choice == "resume":
             return _clamp(stored_pos, token_count)
-        # "restart" or any unexpected value - start from the top.
         return 0
 
     # --- Playback -------------------------------------------------------------
@@ -321,7 +302,6 @@ class MainWindow:
 
     def _play(self) -> None:
         if self.session.is_finished():
-            # Restart from the beginning if they press play at the end.
             self.session.position = 0
         self.session.is_playing = True
         self._update_play_button()
@@ -354,7 +334,6 @@ class MainWindow:
         if self.session.is_playing:
             self.root.after(delay_ms(self.session.wpm), self._tick)
         else:
-            # advance() stopped us at the end of the stream.
             self._update_play_button()
             self._save_progress()
 
@@ -377,17 +356,10 @@ class MainWindow:
         self._refresh_status()
 
     def _on_restart(self) -> None:
-        """Jump to position 0, prompting for confirmation unless disabled.
-
-        Per spec: restart during playback does NOT pause. The modal
-        blocks the event loop while open; once closed, we set position
-        and playback continues (or doesn't) as it was.
-        """
+        """Jump to position 0, prompting for confirmation unless disabled."""
         if not self.session.tokens:
             return
 
-        # Already at the start and not playing: nothing to restart from.
-        # Guards against a confirmation dialog that has no effect.
         if self.session.position == 0 and not self.session.is_playing:
             return
 
@@ -398,15 +370,12 @@ class MainWindow:
             if choice == "restart_no_ask":
                 self._restart_confirm = False
                 self._save_config()
-            # "restart" falls through to the reset below.
 
         self.session.position = 0
         current = self.session.current_token()
         if current is not None:
             self.reader_view.show(current.text)
         self._refresh_status()
-        # Persist the new position so a crash mid-restart doesn't leave
-        # the user's saved position at the old spot.
         self._save_progress()
 
     # --- WPM ------------------------------------------------------------------
@@ -435,8 +404,9 @@ class MainWindow:
         self.wpm_value_label.config(text=str(self.session.wpm))
 
     def _update_play_button(self) -> None:
-        # Glyph-only on the play button: ▶ or ⏸.
-        self.play_btn.config(text="⏸" if self.session.is_playing else "▶")
+        self.play_btn.config(
+            text="⏸ Pause" if self.session.is_playing else "▶ Play"
+        )
 
     # --- Lifecycle ------------------------------------------------------------
 
@@ -459,9 +429,6 @@ class MainWindow:
         })
 
     def _save_progress(self) -> None:
-        # No file loaded → nothing to record. Avoids writing an
-        # empty-string key into progress.json on app close before the
-        # user opens anything.
         if not self.session.file_path:
             return
         progress_store.set_entry(

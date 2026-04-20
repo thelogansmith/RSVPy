@@ -40,24 +40,21 @@ class _ModalBase:
         self.top.config(bg=theme.background)
 
         # Make this a true modal: owner relationship + input grab.
-        # transient() ties the dialog's lifecycle to the parent window
-        # (minimize together, stay on top). grab_set() routes all events
-        # to this window until it closes.
         self.top.transient(parent)
 
-        # Escape dismisses with the default "cancel" outcome. Subclasses
-        # that want Escape to mean something else can override _on_cancel.
+        # Escape dismisses with the default "cancel" outcome.
         self.top.bind("<Escape>", lambda _e: self._on_cancel())
         self.top.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         # Body frame - subclass populates this.
-        self.body = tk.Frame(self.top, bg=theme.background, padx=18, pady=16)
-        self.body.pack(fill="both", expand=True)
+        # Note: padx/pady are pack() options, NOT Frame constructor args.
+        # Tk's Frame raises "bad screen distance" on tuple pady in __init__.
+        self.body = tk.Frame(self.top, bg=theme.background)
+        self.body.pack(fill="both", expand=True, padx=18, pady=(16, 8))
 
         # Button row - subclass populates via _add_button.
-        self.button_row = tk.Frame(self.top, bg=theme.background,
-                                    padx=18, pady=(0, 14))
-        self.button_row.pack(fill="x")
+        self.button_row = tk.Frame(self.top, bg=theme.background)
+        self.button_row.pack(fill="x", padx=18, pady=(0, 14))
 
     def _add_button(self, text: str, command: Callable[[], None],
                     default: bool = False) -> tk.Button:
@@ -79,7 +76,7 @@ class _ModalBase:
         dw = self.top.winfo_width()
         dh = self.top.winfo_height()
         x = px + (pw - dw) // 2
-        y = py + (ph - dh) // 3  # Biased slightly above center, reads better.
+        y = py + (ph - dh) // 3  # Biased slightly above center.
         self.top.geometry(f"+{x}+{y}")
 
     def _on_cancel(self) -> None:
@@ -88,13 +85,8 @@ class _ModalBase:
         self.top.destroy()
 
     def show(self) -> str:
-        """Display the dialog and block until it's dismissed.
-
-        Must be called after self.body and buttons are populated.
-        """
+        """Display the dialog and block until it's dismissed."""
         self._center_on_parent()
-        # grab_set() must be called after the window is visible, hence
-        # the update_idletasks in _center_on_parent above.
         self.top.grab_set()
         self.top.focus_set()
         self.top.wait_window()
@@ -106,15 +98,12 @@ def ask_file_changed(parent: tk.Misc, theme: Theme, filename: str,
     """Prompt the user that a file has changed since they last read it.
 
     Returns "restart" (start at token 0) or "resume" (keep saved position).
-    Escape / window-close default to "restart" - matching the spec's
-    "silently resuming on a changed file is the bug this feature fixes."
+    Escape / window-close default to "restart".
     """
 
     class FileChangedDialog(_ModalBase):
 
         def _on_cancel(self) -> None:
-            # Escape defaults to "start over," matching the default
-            # button on the dialog itself.
             self._result = "restart"
             self.top.destroy()
 
@@ -124,7 +113,6 @@ def ask_file_changed(parent: tk.Misc, theme: Theme, filename: str,
 
     dlg = FileChangedDialog(parent, "File changed", theme)
 
-    # Message body.
     msg = tk.Label(
         dlg.body,
         text=f"{filename} has changed since you last read it.",
@@ -143,13 +131,11 @@ def ask_file_changed(parent: tk.Misc, theme: Theme, filename: str,
     )
     detail.pack(fill="x")
 
-    # Buttons. "Start over" is the default per spec.
     dlg._add_button("Resume anyway",
                     command=lambda: dlg._choose("resume"))
     default_btn = dlg._add_button("Start over",
                                    command=lambda: dlg._choose("restart"),
                                    default=True)
-    # Return from the default button activates it.
     dlg.top.bind("<Return>", lambda _e: dlg._choose("restart"))
     default_btn.focus_set()
 
@@ -160,14 +146,9 @@ def ask_restart_confirm(parent: tk.Misc, theme: Theme) -> str:
     """Confirm that the user wants to restart reading from the beginning.
 
     Returns:
-      * "cancel"         - do nothing (also the default from Escape)
+      * "cancel"         - do nothing
       * "restart"        - restart, keep asking on future restarts
       * "restart_no_ask" - restart and set restart_confirm=False in config
-
-    The "don't ask again" checkbox is persisted only when combined with
-    an actual restart - if the user ticks the box and then cancels, we
-    treat that as "they didn't confirm the decision," so no config
-    change. This is the standard pattern in modern confirmation dialogs.
     """
 
     class RestartDialog(_ModalBase):
@@ -194,9 +175,6 @@ def ask_restart_confirm(parent: tk.Misc, theme: Theme) -> str:
     msg.pack(fill="x", pady=(0, 10))
 
     dlg.dont_ask = tk.BooleanVar(value=False)
-    # Checkbutton theming is finicky across platforms - selectcolor
-    # matches the background so the indicator reads as part of the
-    # dialog rather than floating on a stark white square on Windows.
     check = tk.Checkbutton(
         dlg.body,
         text="Don't ask again",
@@ -210,7 +188,6 @@ def ask_restart_confirm(parent: tk.Misc, theme: Theme) -> str:
     )
     check.pack(fill="x")
 
-    # Buttons. Cancel is default per spec ("safer" choice in a modal).
     dlg._add_button("Restart",
                     command=lambda: dlg._choose(restart=True))
     default_btn = dlg._add_button("Cancel",
