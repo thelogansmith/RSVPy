@@ -18,7 +18,7 @@ from core.timing import clamp_wpm, delay_ms
 from importers.registry import all_extensions, find_importer
 from storage import config as config_store
 from storage import progress as progress_store
-from ui.dialogs import ask_file_changed
+from ui.dialogs import ask_file_changed, ask_restart_confirm
 from ui.reader_view import ReaderView
 from ui.theme import DARK, LIGHT, Theme, get_theme
 
@@ -30,6 +30,7 @@ WINDOW_WIDTH = 600
 WINDOW_HEIGHT = 300
 WPM_STEP = 25
 REWIND_TOKENS = 5
+SKIP_TOKENS = 5
 # How often during playback to persist the current position, measured
 # in tokens. Spec requires every ~100 tokens.
 PROGRESS_CHECKPOINT_EVERY = 100
@@ -56,6 +57,9 @@ class MainWindow:
         cfg = self._load_config()
         self.session.wpm = clamp_wpm(cfg.get("wpm", 300))
         self._theme: Theme = get_theme(cfg.get("dark_mode", True))
+        # Whether to prompt before restart. Flipped off by the "don't
+        # ask again" checkbox in the restart dialog.
+        self._restart_confirm: bool = bool(cfg.get("restart_confirm", True))
 
         self._build_window()
         self._build_widgets()
@@ -93,17 +97,37 @@ class MainWindow:
         self.control_bar.pack(side="bottom", fill="x")
         self.control_bar.pack_propagate(False)
 
+        # Left cluster: Open, then transport (restart, rewind, play, skip).
         self.open_btn = tk.Button(
-            self.control_bar, text="Open", width=8, command=self._on_open
+            self.control_bar, text="Open", width=6, command=self._on_open
         )
-        self.open_btn.pack(side="left", padx=(10, 6), pady=8)
+        self.open_btn.pack(side="left", padx=(10, 8), pady=8)
 
+        # Transport buttons - glyph-only to fit in the 600px window.
+        # If these ever feel cramped we widen the window in step 8 when
+        # the recents button joins them.
+        self.restart_btn = tk.Button(
+            self.control_bar, text="⏮", width=2, command=self._on_restart
+        )
+        self.restart_btn.pack(side="left", padx=1, pady=8)
+
+        self.rewind_btn = tk.Button(
+            self.control_bar, text="⏪", width=2, command=self._on_rewind
+        )
+        self.rewind_btn.pack(side="left", padx=1, pady=8)
+
+        # Play button is wider to absorb the "▶ Play" / "⏸ Pause" text swap.
         self.play_btn = tk.Button(
-            self.control_bar, text="▶ Play", width=10, command=self._on_play_pause
+            self.control_bar, text="▶", width=3, command=self._on_play_pause
         )
-        self.play_btn.pack(side="left", padx=6, pady=8)
+        self.play_btn.pack(side="left", padx=1, pady=8)
 
-        # Theme toggle is far-right; WPM stepper sits next to it.
+        self.skip_btn = tk.Button(
+            self.control_bar, text="⏩", width=2, command=self._on_skip
+        )
+        self.skip_btn.pack(side="left", padx=1, pady=8)
+
+        # Right cluster: theme toggle, then WPM stepper (packed right-to-left).
         self.theme_btn = tk.Button(
             self.control_bar, text="☀" if self._theme.name == "dark" else "🌙",
             width=3, command=self._on_toggle_theme,
@@ -114,19 +138,19 @@ class MainWindow:
             self.control_bar, text="+", width=2,
             command=lambda: self._adjust_wpm(WPM_STEP),
         )
-        self.wpm_plus_btn.pack(side="right", padx=2, pady=8)
+        self.wpm_plus_btn.pack(side="right", padx=1, pady=8)
 
-        self.wpm_value_label = tk.Label(self.control_bar, width=5, anchor="center")
-        self.wpm_value_label.pack(side="right", padx=2, pady=8)
+        self.wpm_value_label = tk.Label(self.control_bar, width=4, anchor="center")
+        self.wpm_value_label.pack(side="right", padx=1, pady=8)
 
         self.wpm_minus_btn = tk.Button(
             self.control_bar, text="−", width=2,
             command=lambda: self._adjust_wpm(-WPM_STEP),
         )
-        self.wpm_minus_btn.pack(side="right", padx=(6, 2), pady=8)
+        self.wpm_minus_btn.pack(side="right", padx=(6, 1), pady=8)
 
         self.wpm_prefix_label = tk.Label(self.control_bar, text="WPM:")
-        self.wpm_prefix_label.pack(side="right", padx=(6, 2), pady=8)
+        self.wpm_prefix_label.pack(side="right", padx=(6, 1), pady=8)
 
         # Reader view (fills remaining space) ---------------------------------
         self.reader_view = ReaderView(self.root, self._theme)
@@ -135,6 +159,8 @@ class MainWindow:
     def _bind_shortcuts(self) -> None:
         self.root.bind("<space>", lambda _e: self._on_play_pause())
         self.root.bind("<Left>", lambda _e: self._on_rewind())
+        self.root.bind("<Right>", lambda _e: self._on_skip())
+        self.root.bind("<Home>", lambda _e: self._on_restart())
         self.root.bind("<Control-o>", lambda _e: self._on_open())
 
     # --- Theming --------------------------------------------------------------
@@ -161,7 +187,8 @@ class MainWindow:
         # Buttons: Tk on macOS ignores bg on native buttons, but setting
         # it works on Windows and Linux and does no harm on macOS.
         for btn in (
-            self.open_btn, self.play_btn, self.theme_btn,
+            self.open_btn, self.restart_btn, self.rewind_btn,
+            self.play_btn, self.skip_btn, self.theme_btn,
             self.wpm_plus_btn, self.wpm_minus_btn,
         ):
             btn.config(bg=surface, fg=text, activebackground=bg, activeforeground=text,
@@ -340,6 +367,48 @@ class MainWindow:
             self.reader_view.show(current.text)
         self._refresh_status()
 
+    def _on_skip(self) -> None:
+        if not self.session.tokens:
+            return
+        self.session.skip(SKIP_TOKENS)
+        current = self.session.current_token()
+        if current is not None:
+            self.reader_view.show(current.text)
+        self._refresh_status()
+
+    def _on_restart(self) -> None:
+        """Jump to position 0, prompting for confirmation unless disabled.
+
+        Per spec: restart during playback does NOT pause. The modal
+        blocks the event loop while open; once closed, we set position
+        and playback continues (or doesn't) as it was.
+        """
+        if not self.session.tokens:
+            return
+
+        # Already at the start and not playing: nothing to restart from.
+        # Guards against a confirmation dialog that has no effect.
+        if self.session.position == 0 and not self.session.is_playing:
+            return
+
+        if self._restart_confirm:
+            choice = ask_restart_confirm(self.root, self._theme)
+            if choice == "cancel":
+                return
+            if choice == "restart_no_ask":
+                self._restart_confirm = False
+                self._save_config()
+            # "restart" falls through to the reset below.
+
+        self.session.position = 0
+        current = self.session.current_token()
+        if current is not None:
+            self.reader_view.show(current.text)
+        self._refresh_status()
+        # Persist the new position so a crash mid-restart doesn't leave
+        # the user's saved position at the old spot.
+        self._save_progress()
+
     # --- WPM ------------------------------------------------------------------
 
     def _adjust_wpm(self, delta: int) -> None:
@@ -366,9 +435,8 @@ class MainWindow:
         self.wpm_value_label.config(text=str(self.session.wpm))
 
     def _update_play_button(self) -> None:
-        self.play_btn.config(
-            text="⏸ Pause" if self.session.is_playing else "▶ Play"
-        )
+        # Glyph-only on the play button: ▶ or ⏸.
+        self.play_btn.config(text="⏸" if self.session.is_playing else "▶")
 
     # --- Lifecycle ------------------------------------------------------------
 
@@ -387,6 +455,7 @@ class MainWindow:
         config_store.save_config({
             "wpm": self.session.wpm,
             "dark_mode": self._theme.name == "dark",
+            "restart_confirm": self._restart_confirm,
         })
 
     def _save_progress(self) -> None:

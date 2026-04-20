@@ -26,6 +26,11 @@ CONFIG_FILENAME = "config.json"
 DEFAULT_CONFIG: dict = {
     "wpm": 300,
     "dark_mode": True,
+    # True means "confirm before restarting." Users can flip this off
+    # via the 'Don't ask again' checkbox in the restart dialog. Phase 2
+    # provides no UI to flip it back; a user who wants it can edit
+    # config.json directly. Phase 4 polishing will add a settings panel.
+    "restart_confirm": True,
 }
 
 

@@ -9,9 +9,9 @@ and the top-level helpers just populate the body.
 
 Each helper blocks until the user dismisses the dialog, then returns a
 plain string indicating which action was chosen. String returns beat
-booleans here because some dialogs (restart confirm, step 3) have three
-outcomes, and "return 'cancel' / 'restart' / 'restart_no_ask'" reads
-better than a bool plus a flag.
+booleans here because restart_confirm has three outcomes
+("cancel" / "restart" / "restart_no_ask") and a consistent vocabulary
+reads better than a mix.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class _ModalBase:
     self.show() to block until the user dismisses it.
     """
 
-    # Subclasses set this before calling show() to indicate the result.
+    # Subclasses set this before the window closes to communicate the result.
     _result: str = ""
 
     def __init__(self, parent: tk.Misc, title: str, theme: Theme) -> None:
@@ -151,6 +151,72 @@ def ask_file_changed(parent: tk.Misc, theme: Theme, filename: str,
                                    default=True)
     # Return from the default button activates it.
     dlg.top.bind("<Return>", lambda _e: dlg._choose("restart"))
+    default_btn.focus_set()
+
+    return dlg.show()
+
+
+def ask_restart_confirm(parent: tk.Misc, theme: Theme) -> str:
+    """Confirm that the user wants to restart reading from the beginning.
+
+    Returns:
+      * "cancel"         - do nothing (also the default from Escape)
+      * "restart"        - restart, keep asking on future restarts
+      * "restart_no_ask" - restart and set restart_confirm=False in config
+
+    The "don't ask again" checkbox is persisted only when combined with
+    an actual restart - if the user ticks the box and then cancels, we
+    treat that as "they didn't confirm the decision," so no config
+    change. This is the standard pattern in modern confirmation dialogs.
+    """
+
+    class RestartDialog(_ModalBase):
+        dont_ask: tk.BooleanVar
+
+        def _choose(self, restart: bool) -> None:
+            if not restart:
+                self._result = "cancel"
+            elif self.dont_ask.get():
+                self._result = "restart_no_ask"
+            else:
+                self._result = "restart"
+            self.top.destroy()
+
+    dlg = RestartDialog(parent, "Restart reading", theme)
+
+    msg = tk.Label(
+        dlg.body,
+        text="Restart reading from the beginning?",
+        font=("Helvetica", 11, "bold"),
+        bg=theme.background, fg=theme.text,
+        wraplength=360, justify="left", anchor="w",
+    )
+    msg.pack(fill="x", pady=(0, 10))
+
+    dlg.dont_ask = tk.BooleanVar(value=False)
+    # Checkbutton theming is finicky across platforms - selectcolor
+    # matches the background so the indicator reads as part of the
+    # dialog rather than floating on a stark white square on Windows.
+    check = tk.Checkbutton(
+        dlg.body,
+        text="Don't ask again",
+        variable=dlg.dont_ask,
+        bg=theme.background, fg=theme.text_muted,
+        selectcolor=theme.background,
+        activebackground=theme.background,
+        activeforeground=theme.text,
+        highlightthickness=0, bd=0,
+        anchor="w",
+    )
+    check.pack(fill="x")
+
+    # Buttons. Cancel is default per spec ("safer" choice in a modal).
+    dlg._add_button("Restart",
+                    command=lambda: dlg._choose(restart=True))
+    default_btn = dlg._add_button("Cancel",
+                                   command=lambda: dlg._choose(restart=False),
+                                   default=True)
+    dlg.top.bind("<Return>", lambda _e: dlg._choose(restart=False))
     default_btn.focus_set()
 
     return dlg.show()
