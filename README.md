@@ -6,7 +6,7 @@ RSVP displays words one at a time at a fixed focal point, eliminating eye moveme
 
 ## Status
 
-🚧 **Early development — Phase 1.** Not yet usable. See [Roadmap](#roadmap) for planned features.
+🚧 **Phase 2 complete.** The app reads `.txt`, `.md`, `.epub`, and `.docx` files with transport controls, reading statistics, and recent-files history. See [Roadmap](#roadmap) for what's next.
 
 ## Goals
 
@@ -26,17 +26,17 @@ RSVP displays words one at a time at a fixed focal point, eliminating eye moveme
 
 ## Roadmap
 
-**Phase 1 — Core skeleton (in progress)**
+**Phase 1 — Core skeleton (complete)**
 Tkinter window, `.txt` import, WPM control, play/pause/rewind, session persistence, dark mode.
 
-**Phase 2 — More formats and polish**
-`.md`, `.epub`, `.docx` importers. Keyboard shortcuts. Library view of recent files. Reading statistics.
+**Phase 2 — More formats and polish (complete)**
+`.md`, `.epub`, `.docx` importers. Transport controls (restart, rewind, play/pause, skip). Recent files window. Reading statistics. Stale-position detection. Additional keyboard shortcuts.
 
-**Phase 3 — PDF support**
-Text-based PDF import with an extraction preview step. Scanned PDFs and OCR are explicitly out of scope.
+**Phase 3 — PDF support and context window**
+Text-based PDF import with an extraction preview step. Context window showing surrounding text. Click-to-seek. Scanned PDFs and OCR are explicitly out of scope.
 
-**Phase 4 — AI integration**
-Optional post-session summaries using a user-supplied API key. Hierarchical summarization for long documents.
+**Phase 4 — AI integration and settings**
+Optional post-session summaries using a user-supplied API key. Hierarchical summarization for long documents. Settings panel for font, color, and size customization.
 
 **Phase 5 — Reading optimizations**
 Optimal Recognition Point (ORP) alignment, variable timing based on word length and punctuation, chunked display for function words.
@@ -55,6 +55,51 @@ Optimal Recognition Point (ORP) alignment, variable timing based on word length 
 
 ## Installation
 
-Not yet available. Once Phase 1 is functional:
+1. Clone the repository:
 
 ```bash
+git clone https://github.com/thelogansmith/RSVPy.git
+cd RSVPy
+```
+
+2. Create and activate a virtual environment:
+
+```bash
+# Create the venv
+python -m venv .venv
+
+# Activate it
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Windows (cmd):
+.venv\Scripts\activate.bat
+# macOS / Linux:
+source .venv/bin/activate
+```
+
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Run the app:
+
+```bash
+python main.py
+```
+
+## Keyboard Shortcuts
+
+| Key       | Action              |
+|-----------|---------------------|
+| Space     | Play / Pause        |
+| Left      | Rewind 5 words      |
+| Right     | Skip forward 5 words|
+| Home      | Restart from beginning |
+| Ctrl+O    | Open file           |
+| Ctrl+R    | Recent files        |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

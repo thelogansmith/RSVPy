@@ -22,6 +22,7 @@ from storage import stats as stats_store
 from ui.dialogs import ask_file_changed, ask_restart_confirm
 from ui.reader_view import ReaderView
 from ui.recents_window import RecentsWindow
+from ui.stats_window import StatsWindow
 from ui.theme import DARK, LIGHT, Theme, get_theme
 
 
@@ -84,7 +85,14 @@ class MainWindow:
         self.progress_label = tk.Label(self.status_bar, anchor="e", padx=10)
         self.progress_label.pack(side="right", fill="y")
 
-        # Recent and Stats buttons in the status bar.
+        # Stats button in the status bar.
+        self.stats_btn = tk.Button(
+            self.status_bar, text="Stats", bd=0, padx=6,
+            command=self._on_stats,
+        )
+        self.stats_btn.pack(side="right", fill="y", padx=2)
+
+        # Recent button in the status bar.
         self.recent_btn = tk.Button(
             self.status_bar, text="Recent", bd=0, padx=6,
             command=self._on_recents,
@@ -201,11 +209,12 @@ class MainWindow:
                        highlightbackground=surface, relief="flat")
 
         # Status bar buttons get a subtler look.
-        self.recent_btn.config(
-            bg=surface, fg=muted,
-            activebackground=bg, activeforeground=text,
-            highlightbackground=surface,
-        )
+        for status_btn in (self.recent_btn, self.stats_btn):
+            status_btn.config(
+                bg=surface, fg=muted,
+                activebackground=bg, activeforeground=text,
+                highlightbackground=surface,
+            )
 
         self.theme_btn.config(text="☀" if theme.name == "dark" else "🌙")
         self.reader_view.apply_theme(theme)
@@ -298,11 +307,15 @@ class MainWindow:
             return _clamp(stored_pos, token_count)
         return 0
 
-    # --- Recents --------------------------------------------------------------
+    # --- Recents / Stats ------------------------------------------------------
 
     def _on_recents(self) -> None:
         """Open the recent files window."""
         RecentsWindow(self.root, self._theme, self._load_file)
+
+    def _on_stats(self) -> None:
+        """Open the reading statistics window."""
+        StatsWindow(self.root, self._theme)
 
     # --- Playback -------------------------------------------------------------
 
