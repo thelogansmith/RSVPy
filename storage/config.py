@@ -26,36 +26,31 @@ CONFIG_FILENAME = "config.json"
 DEFAULT_CONFIG: dict = {
     "wpm": 300,
     "dark_mode": True,
-    # True means "confirm before restarting." Users can flip this off
-    # via the 'Don't ask again' checkbox in the restart dialog. Phase 2
-    # provides no UI to flip it back; a user who wants it can edit
-    # config.json directly. Phase 4 polishing will add a settings panel.
     "restart_confirm": True,
     # Phase 3 additions:
     "context_window_open": False,
     "main_window_geometry": None,
+    # Phase 4 additions:
+    "font_family": "Helvetica",
+    "font_size": 36,
+    "accent_color": None,
+    "api_provider": "anthropic",
+    "api_key_stored": False,
+    "summary_enabled": True,
+    "summary_auto_prompt": False,
 }
 
 
 def config_dir() -> Path:
-    """Return the per-user config directory for RSVPy, creating it if needed.
-
-    Resolution order:
-      * Windows: %APPDATA%\\RSVPy
-      * macOS / Linux: $XDG_CONFIG_HOME/RSVPy, falling back to ~/.config/RSVPy
-    """
+    """Return the per-user config directory for RSVPy, creating it if needed."""
     if sys.platform.startswith("win"):
         base = os.environ.get("APPDATA")
-        # On a misconfigured Windows box APPDATA can be unset; fall back
-        # to the user home so we never raise from a missing env var.
         root = Path(base) if base else Path.home() / "AppData" / "Roaming"
     else:
         base = os.environ.get("XDG_CONFIG_HOME")
         root = Path(base) if base else Path.home() / ".config"
 
     directory = root / APP_NAME
-    # parents=True covers the "AppData/Roaming doesn't exist yet" case
-    # on a fresh user profile. exist_ok makes this idempotent.
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -78,16 +73,11 @@ def load_config() -> dict:
     except FileNotFoundError:
         return dict(DEFAULT_CONFIG)
     except (json.JSONDecodeError, OSError) as e:
-        # Corrupt or unreadable file: log and return defaults. We
-        # deliberately do not delete the bad file - leaving it in place
-        # lets a curious user recover any partial data by hand.
         print(f"RSVPy: could not read config ({e}); using defaults.",
               file=sys.stderr)
         return dict(DEFAULT_CONFIG)
 
     if not isinstance(data, dict):
-        # Someone replaced the file with a list or a scalar. Treat as
-        # corrupt.
         print("RSVPy: config.json is not an object; using defaults.",
               file=sys.stderr)
         return dict(DEFAULT_CONFIG)
@@ -103,23 +93,14 @@ def save_config(cfg: dict) -> None:
     try:
         _atomic_write_json(path, cfg)
     except OSError as e:
-        # Disk full, permission denied, etc. Losing a preference save
-        # is not worth crashing the app over.
         print(f"RSVPy: could not save config ({e}).", file=sys.stderr)
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
-    """Write JSON to `path` atomically via a temp file in the same dir.
-
-    Using the same directory guarantees os.replace is a rename within
-    one filesystem, which is atomic on both POSIX and Windows.
-    """
+    """Write JSON to `path` atomically via a temp file in the same dir."""
     directory = path.parent
     directory.mkdir(parents=True, exist_ok=True)
 
-    # delete=False because we want to hand the path off to os.replace
-    # ourselves; the context manager just gives us a unique filename
-    # and a file handle.
     fd, tmp_name = tempfile.mkstemp(
         prefix=path.name + ".", suffix=".tmp", dir=str(directory)
     )
@@ -130,7 +111,6 @@ def _atomic_write_json(path: Path, data: dict) -> None:
             os.fsync(f.fileno())
         os.replace(tmp_name, path)
     except Exception:
-        # Best-effort cleanup of the temp file if the replace failed.
         try:
             os.unlink(tmp_name)
         except OSError:

@@ -3,9 +3,12 @@ Theme colors.
 
 Kept separate from the UI modules so every widget pulls from a single
 source of truth. Values match the Phase 1 spec's color palette.
+
+Phase 4: accent_color override support. If a custom accent is set in
+config, get_theme() can return a theme with that accent substituted.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -40,5 +43,9 @@ LIGHT = Theme(
 )
 
 
-def get_theme(dark_mode: bool) -> Theme:
-    return DARK if dark_mode else LIGHT
+def get_theme(dark_mode: bool, accent_override: str | None = None) -> Theme:
+    """Return the appropriate theme, optionally with a custom accent color."""
+    base = DARK if dark_mode else LIGHT
+    if accent_override:
+        return replace(base, accent=accent_override)
+    return base
