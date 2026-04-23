@@ -527,32 +527,13 @@ class MainWindow:
             bg=theme.background, fg=theme.text,
             anchor="w",
         )
-        header.pack(fill="x", padx=14, pady=(12, 6))
+        header.pack(side="top", fill="x", padx=14, pady=(12, 6))
 
-        # Scrollable text widget showing the preview.
-        text_frame = tk.Frame(dialog, bg=theme.background)
-        text_frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
-
-        scrollbar = tk.Scrollbar(text_frame)
-        scrollbar.pack(side="right", fill="y")
-
-        text_widget = tk.Text(
-            text_frame,
-            font=("Consolas", 10),
-            bg=theme.surface, fg=theme.text,
-            wrap="word", padx=10, pady=8,
-            highlightthickness=0, bd=1, relief="flat",
-            yscrollcommand=scrollbar.set,
-        )
-        text_widget.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=text_widget.yview)
-
-        text_widget.insert("1.0", preview_text)
-        text_widget.config(state="disabled")
-
-        # Button row.
+        # Button row — packed BEFORE the text frame (side="bottom") so
+        # it is guaranteed layout space. The text frame then expands
+        # into whatever vertical space remains.
         btn_frame = tk.Frame(dialog, bg=theme.background)
-        btn_frame.pack(fill="x", padx=14, pady=(0, 14))
+        btn_frame.pack(side="bottom", fill="x", padx=14, pady=(8, 14))
 
         def _cancel():
             result["proceed"] = False
@@ -577,6 +558,27 @@ class MainWindow:
             highlightbackground=theme.surface, relief="flat",
         )
         read_btn.pack(side="right")
+
+        # Scrollable text widget showing the preview — fills remaining space.
+        text_frame = tk.Frame(dialog, bg=theme.background)
+        text_frame.pack(side="top", fill="both", expand=True, padx=14, pady=(0, 0))
+
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        text_widget = tk.Text(
+            text_frame,
+            font=("Consolas", 10),
+            bg=theme.surface, fg=theme.text,
+            wrap="word", padx=10, pady=8,
+            highlightthickness=0, bd=1, relief="flat",
+            yscrollcommand=scrollbar.set,
+        )
+        text_widget.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=text_widget.yview)
+
+        text_widget.insert("1.0", preview_text)
+        text_widget.config(state="disabled")
 
         dialog.bind("<Escape>", lambda _e: _cancel())
         dialog.bind("<Return>", lambda _e: _proceed())
