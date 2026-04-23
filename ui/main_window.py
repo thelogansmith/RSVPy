@@ -399,6 +399,8 @@ class MainWindow:
                 result = importer.load(path)
                 self._load_queue.put(("ok", path, result))
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self._load_queue.put(("error", path, e))
 
         thread = threading.Thread(target=_bg_load, daemon=True)
@@ -433,6 +435,14 @@ class MainWindow:
         source_text, tokens = msg[2]
         resolved = str(path.resolve())
         source_hash = _hash_source(source_text)
+
+        if not tokens:
+            print(f"RSVPy: no tokens extracted from {path.name}")
+            self.reader_view.show("No readable text found")
+            self.root.after(2000, self.reader_view.clear)
+            return
+
+        print(f"RSVPy: loaded {len(tokens)} tokens from {path.name}")
 
         position = self._resolve_resume_position(
             resolved, source_hash, len(tokens), path.name
