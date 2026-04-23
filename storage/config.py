@@ -31,6 +31,9 @@ DEFAULT_CONFIG: dict = {
     # provides no UI to flip it back; a user who wants it can edit
     # config.json directly. Phase 4 polishing will add a settings panel.
     "restart_confirm": True,
+    # Phase 3 additions:
+    "context_window_open": False,
+    "main_window_geometry": None,
 }
 
 

@@ -6,7 +6,7 @@ RSVP displays words one at a time at a fixed focal point, eliminating eye moveme
 
 ## Status
 
-🚧 **Phase 2 complete.** The app reads `.txt`, `.md`, `.epub`, and `.docx` files with transport controls, reading statistics, and recent-files history. See [Roadmap](#roadmap) for what's next.
+🚧 **Phase 3 complete.** The app reads `.txt`, `.md`, `.epub`, `.docx`, and `.pdf` files with transport controls, reading statistics, recent-files history, a context window for tracking your position in the document, and a scrubbable progress bar. See [Roadmap](#roadmap) for what's next.
 
 ## Goals
 
@@ -32,8 +32,8 @@ Tkinter window, `.txt` import, WPM control, play/pause/rewind, session persisten
 **Phase 2 — More formats and polish (complete)**
 `.md`, `.epub`, `.docx` importers. Transport controls (restart, rewind, play/pause, skip). Recent files window. Reading statistics. Stale-position detection. Additional keyboard shortcuts.
 
-**Phase 3 — PDF support and context window**
-Text-based PDF import with an extraction preview step. Context window showing surrounding text. Click-to-seek. Scanned PDFs and OCR are explicitly out of scope.
+**Phase 3 — PDF support and context window (complete)**
+Text-based PDF import with extraction preview. Context window showing surrounding text with current-word highlighting. Click-to-seek in context window. Scrubbable progress bar. Threaded file loading. Resizable main window.
 
 **Phase 4 — AI integration and settings**
 Optional post-session summaries using a user-supplied API key. Hierarchical summarization for long documents. Settings panel for font, color, and size customization.
@@ -91,14 +91,15 @@ python main.py
 
 ## Keyboard Shortcuts
 
-| Key       | Action              |
-|-----------|---------------------|
-| Space     | Play / Pause        |
-| Left      | Rewind 5 words      |
-| Right     | Skip forward 5 words|
-| Home      | Restart from beginning |
-| Ctrl+O    | Open file           |
-| Ctrl+R    | Recent files        |
+| Key       | Action                     |
+|-----------|----------------------------|
+| Space     | Play / Pause               |
+| Left      | Rewind 5 words             |
+| Right     | Skip forward 5 words       |
+| Home      | Restart from beginning     |
+| Ctrl+O    | Open file                  |
+| Ctrl+R    | Recent files               |
+| Ctrl+T    | Toggle context window      |
 
 ## License
 
