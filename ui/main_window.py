@@ -23,6 +23,7 @@ from tkinter import filedialog
 
 from core.session import Session
 from core.timing import clamp_wpm, delay_ms
+from core.tokenizer import tokenize
 from importers.registry import all_extensions, find_importer
 from storage import config as config_store
 from storage import keystore
@@ -148,11 +149,16 @@ class MainWindow:
         self.control_bar.pack(side="bottom", fill="x")
         self.control_bar.pack_propagate(False)
 
-        # Left zone: Open button.
+        # Left zone: Open and Paste buttons.
         self.open_btn = tk.Button(
             self.control_bar, text="Open", width=6, command=self._on_open
         )
         self.open_btn.pack(side="left", padx=(10, 0), pady=8)
+
+        self.paste_btn = tk.Button(
+            self.control_bar, text="Paste", width=6, command=self._on_paste
+        )
+        self.paste_btn.pack(side="left", padx=(4, 0), pady=8)
 
         # Right zone: theme toggle + WPM stepper (packed right-to-left).
         self.theme_btn = tk.Button(
@@ -257,6 +263,7 @@ class MainWindow:
         self.root.bind("<Control-r>", lambda _e: self._on_recents())
         self.root.bind("<Control-t>", lambda _e: self._on_toggle_context())
         self.root.bind("<Control-comma>", lambda _e: self._on_settings())
+        self.root.bind("<Control-v>", lambda _e: self._on_paste())
 
     # --- Theming --------------------------------------------------------------
 
@@ -284,7 +291,7 @@ class MainWindow:
             child.config(bg=surface)
 
         for btn in (
-            self.open_btn, self.restart_btn, self.rewind_btn,
+            self.open_btn, self.paste_btn, self.restart_btn, self.rewind_btn,
             self.play_btn, self.skip_btn, self.theme_btn,
             self.wpm_plus_btn, self.wpm_minus_btn,
             self.summarize_btn,
@@ -375,6 +382,146 @@ class MainWindow:
         if not path_str:
             return
         self._load_file(Path(path_str))
+
+    def _on_paste(self) -> None:
+        """Open a dialog where the user can paste or type text to read."""
+        if self._loading:
+            return
+
+        theme = self._theme
+        result = {"text": ""}
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Paste text")
+        dialog.geometry("520x400")
+        dialog.resizable(True, True)
+        dialog.minsize(400, 250)
+        dialog.transient(self.root)
+        dialog.config(bg=theme.background)
+
+        header = tk.Label(
+            dialog,
+            text="Paste or type text to read:",
+            font=("Helvetica", 11),
+            bg=theme.background, fg=theme.text,
+            anchor="w",
+        )
+        header.pack(side="top", fill="x", padx=14, pady=(12, 6))
+
+        # Button row at bottom.
+        btn_frame = tk.Frame(dialog, bg=theme.background)
+        btn_frame.pack(side="bottom", fill="x", padx=14, pady=(8, 14))
+
+        def _cancel():
+            dialog.destroy()
+
+        def _read():
+            result["text"] = text_widget.get("1.0", "end-1c")
+            dialog.destroy()
+
+        cancel_btn = tk.Button(
+            btn_frame, text="Cancel", width=10, command=_cancel,
+            bg=theme.surface, fg=theme.text,
+            activebackground=theme.background, activeforeground=theme.text,
+            highlightbackground=theme.surface, relief="flat",
+        )
+        cancel_btn.pack(side="right", padx=(6, 0))
+
+        read_btn = tk.Button(
+            btn_frame, text="Read", width=10, command=_read,
+            bg=theme.surface, fg=theme.text,
+            activebackground=theme.background, activeforeground=theme.text,
+            highlightbackground=theme.surface, relief="flat",
+        )
+        read_btn.pack(side="right")
+
+        # Scrollable text entry.
+        text_frame = tk.Frame(dialog, bg=theme.background)
+        text_frame.pack(side="top", fill="both", expand=True, padx=14)
+
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        text_widget = tk.Text(
+            text_frame,
+            font=("Consolas", 10),
+            bg=theme.surface, fg=theme.text,
+            insertbackground=theme.text,
+            wrap="word", padx=10, pady=8,
+            highlightthickness=1, bd=0, relief="flat",
+            highlightbackground=theme.surface,
+            highlightcolor=theme.accent,
+            yscrollcommand=scrollbar.set,
+        )
+        text_widget.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=text_widget.yview)
+
+        # Try to pre-fill from clipboard.
+        try:
+            clipboard = self.root.clipboard_get()
+            if clipboard and clipboard.strip():
+                text_widget.insert("1.0", clipboard)
+        except tk.TclError:
+            pass  # Empty clipboard or non-text content.
+
+        text_widget.focus_set()
+
+        dialog.bind("<Escape>", lambda _e: _cancel())
+
+        # Center on parent.
+        dialog.update_idletasks()
+        px = self.root.winfo_rootx()
+        py = self.root.winfo_rooty()
+        pw = self.root.winfo_width()
+        ph = self.root.winfo_height()
+        dw = dialog.winfo_width()
+        dh = dialog.winfo_height()
+        dialog.geometry(f"+{px + (pw - dw) // 2}+{py + (ph - dh) // 3}")
+
+        dialog.grab_set()
+        dialog.wait_window()
+
+        text = result["text"].strip()
+        if text:
+            self._load_from_text(text)
+
+    def _load_from_text(self, text: str) -> None:
+        """Load pasted text directly into the session, bypassing importers."""
+        tokens = tokenize(text)
+        if not tokens:
+            self.reader_view.show("No readable text")
+            self.root.after(2000, self.reader_view.clear)
+            return
+
+        source_hash = _hash_source(text)
+
+        self.session.is_playing = False
+        self._update_play_button()
+
+        self.session.tokens = tokens
+        self.session.source_text = text
+        self.session.source_hash = source_hash
+        self.session.file_path = ""
+        self.session.position = 0
+        self._tokens_since_checkpoint = 0
+
+        print(f"RSVPy: loaded {len(tokens)} tokens from pasted text")
+
+        current = self.session.current_token()
+        if current is not None:
+            self.reader_view.show(current.text)
+        else:
+            self.reader_view.clear()
+
+        self._refresh_status()
+        self._draw_progress_bar()
+        self._refresh_summarize_button()
+
+        if self._context_window and self._context_window.is_alive():
+            self._context_window.load_text(text, "Pasted text")
+            self._update_context_highlight()
+
+        self._source_starts = [t.source_start for t in self.session.tokens]
 
     def _load_file(self, path: Path) -> None:
         if self._loading:
@@ -1027,6 +1174,11 @@ class MainWindow:
     def _refresh_status(self) -> None:
         if self.session.file_path:
             self.filename_label.config(text=Path(self.session.file_path).name)
+            self.progress_label.config(
+                text=f"{self.session.progress() * 100:.0f}%"
+            )
+        elif self.session.tokens:
+            self.filename_label.config(text="Pasted text")
             self.progress_label.config(
                 text=f"{self.session.progress() * 100:.0f}%"
             )
