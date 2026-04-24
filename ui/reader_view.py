@@ -7,11 +7,6 @@ text, the ORP character (highlighted in the accent color), and
 post-ORP text — positioned so the ORP character sits at a fixed
 focal column in the center of the view. Thin vertical tick marks
 above and below the ORP position provide a persistent visual anchor.
-
-For chunked tokens (function word + content word, e.g. "the cat"),
-the ORP is calculated on the content word and the function word is
-treated as prefix text. This keeps the fixation point on the
-meaningful part of the chunk.
 """
 
 import tkinter as tk
@@ -134,31 +129,16 @@ class ReaderView(tk.Frame):
         self._container.grid_columnconfigure(2, minsize=min_px)
 
     def show(self, word: str) -> None:
-        """Display the given word with ORP alignment.
-
-        For chunked tokens (e.g. "the cat"), the function-word prefix
-        is included in the pre-ORP region and the ORP is calculated
-        on the content word.
-        """
+        """Display the given word with ORP alignment."""
         if not word:
             self.clear()
             return
 
-        # Split chunked tokens: if there's a space, the last "word" is
-        # the content word and everything before is prefix.
-        parts = word.rsplit(" ", 1)
-        if len(parts) == 2:
-            prefix, content = parts
-            prefix += " "  # Keep the space for display.
-        else:
-            prefix = ""
-            content = word
+        orp = _orp_index(word)
 
-        orp = _orp_index(content)
-
-        pre_text = prefix + content[:orp]
-        orp_char = content[orp] if orp < len(content) else ""
-        post_text = content[orp + 1:] if orp + 1 < len(content) else ""
+        pre_text = word[:orp]
+        orp_char = word[orp] if orp < len(word) else ""
+        post_text = word[orp + 1:] if orp + 1 < len(word) else ""
 
         self._pre_label.config(text=pre_text)
         self._orp_label.config(text=orp_char)
