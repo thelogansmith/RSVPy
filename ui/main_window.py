@@ -5,14 +5,10 @@ Owns the Session, the Tk root, and the play loop. Delegates word
 display to ReaderView, file parsing to the importer registry, and
 persistence to the storage package.
 
-Phase 4 additions:
-  - Transport button overhaul (step 1): hybrid labels with tooltips.
-    Icon-only for restart/rewind/skip, text+icon for play/pause.
-  - Settings panel (steps 2-4): gear icon in status bar, Ctrl+,
-    shortcut. Font, accent color, restart confirm, AI prefs.
-  - Configurable font and accent color with live preview.
-  - AI summarization (steps 5-7): "Summarize" button, threaded API
-    calls, summary display window, auto-prompt on finish.
+Phase 5 changes:
+  - _tick() passes token_type and word_length to delay_ms() for
+    variable timing (sentence/paragraph pauses, word-length scaling,
+    punctuation-only reduced delay).
 """
 
 from __future__ import annotations
@@ -183,7 +179,7 @@ class MainWindow:
         self.wpm_prefix_label = tk.Label(self.control_bar, text="WPM:")
         self.wpm_prefix_label.pack(side="right", padx=(4, 1), pady=8)
 
-        # Center zone: transport buttons (Phase 4 overhaul).
+        # Center zone: transport buttons.
         transport = tk.Frame(self.control_bar)
         transport.pack(side="left", fill="both", expand=True, pady=4)
         self._transport_frame = transport
@@ -191,7 +187,6 @@ class MainWindow:
         inner = tk.Frame(transport)
         inner.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Phase 4: hybrid labels — icon-only for transport, text for play.
         self.restart_btn = tk.Button(
             inner, text="\u23EE", width=3, command=self._on_restart
         )
@@ -216,7 +211,6 @@ class MainWindow:
         self.summarize_btn = tk.Button(
             inner, text="Summarize", width=9, command=self._on_summarize
         )
-        # Packed conditionally in _refresh_summarize_button.
 
         # Tooltips for transport buttons.
         self._tip_restart = ToolTip(self.restart_btn, "Restart from beginning (Home)")
@@ -737,14 +731,12 @@ class MainWindow:
 
     def _on_settings_closed(self, final_config: dict) -> None:
         self._settings_window = None
-        # Refresh summarize button in case the API key changed.
         self._refresh_summarize_button()
         self._save_config()
 
     # --- AI Summarization (Phase 4) -------------------------------------------
 
     def _refresh_summarize_button(self) -> None:
-        """Show or hide the Summarize button based on API key and file state."""
         has_key = bool(keystore.get_api_key())
         has_file = bool(self.session.tokens)
 
@@ -756,7 +748,6 @@ class MainWindow:
             self.summarize_btn.pack_forget()
 
     def _on_summarize(self) -> None:
-        """Trigger summary generation."""
         if not self.session.source_text:
             return
 
@@ -768,9 +759,6 @@ class MainWindow:
         self._run_summarization(api_key, filename)
 
     def _run_summarization(self, api_key: str, filename: str) -> None:
-        """Start summarization on a background thread, showing results in
-        a SummaryWindow."""
-        # Create or reuse summary window.
         if self._summary_window and self._summary_window.is_alive():
             self._summary_window.top.lift()
         else:
@@ -808,7 +796,6 @@ class MainWindow:
         self._poll_summary_queue()
 
     def _poll_summary_queue(self) -> None:
-        """Check the summary queue for results."""
         try:
             msg = self._summary_queue.get_nowait()
         except queue.Empty:
@@ -831,7 +818,6 @@ class MainWindow:
             self._summary_window.show_error(content)
 
     def _on_playback_finished(self) -> None:
-        """Called when playback reaches the end of the document."""
         if not self._summary_auto_prompt:
             return
 
@@ -843,7 +829,6 @@ class MainWindow:
         self._show_auto_summary_prompt(api_key, filename)
 
     def _show_auto_summary_prompt(self, api_key: str, filename: str) -> None:
-        """Show a small prompt asking if the user wants a summary."""
         theme = self._theme
 
         dialog = tk.Toplevel(self.root)
@@ -890,7 +875,6 @@ class MainWindow:
         dialog.bind("<Escape>", lambda _e: _no())
         dialog.bind("<Return>", lambda _e: _yes())
 
-        # Center on parent.
         dialog.update_idletasks()
         px = self.root.winfo_rootx()
         py = self.root.winfo_rooty()
@@ -935,6 +919,12 @@ class MainWindow:
         self._save_progress()
 
     def _tick(self) -> None:
+        """One step of the play loop. Scheduled via root.after.
+
+        Phase 5: passes token_type and word_length to delay_ms() for
+        variable timing — sentence/paragraph pauses, word-length
+        scaling, and punctuation-only reduced delay.
+        """
         if not self.session.is_playing:
             return
         token = self.session.current_token()
@@ -948,7 +938,16 @@ class MainWindow:
         self._draw_progress_bar()
         self._update_context_highlight()
 
-        tick_seconds = delay_ms(self.session.wpm) / 1000.0
+        # Phase 5: variable timing. Pass token type and the display
+        # word's length (for chunked tokens, this is the full chunk
+        # length, which is fine — longer chunks deserve more time).
+        current_delay = delay_ms(
+            self.session.wpm,
+            token_type=token.type,
+            word_length=len(token.text),
+        )
+
+        tick_seconds = current_delay / 1000.0
         progress_pct = int(self.session.progress() * 100)
         stats_store.record_tick(
             self.session.file_path, tick_seconds, progress_pct
@@ -961,7 +960,7 @@ class MainWindow:
             self._tokens_since_checkpoint = 0
 
         if self.session.is_playing:
-            self.root.after(delay_ms(self.session.wpm), self._tick)
+            self.root.after(current_delay, self._tick)
         else:
             # Playback ended (advance() stopped us).
             self._update_play_button()
