@@ -21,7 +21,7 @@ from ui.theme import Theme
 
 # The ORP focal point as a fraction of the view width. 0.38 places it
 # slightly left of center, matching natural reading fixation.
-ORP_RELX = 0.38
+ORP_RELX = 0.50
 
 
 def _orp_index(word: str) -> int:
