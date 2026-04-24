@@ -2,7 +2,7 @@
 
 A lightweight, cross-platform desktop app for reading text using Rapid Serial Visual Presentation (RSVP).
 
-RSVP displays words one at a time at a fixed focal point, eliminating eye movement and enabling faster reading. RSVPy aims to bring this technique to your local files — plain text, ebooks, documents, and PDFs — without the bloat of a modern Electron app.
+RSVP displays words one at a time at a fixed focal point, eliminating eye movement and enabling faster reading. RSVPy brings this technique to your local files — plain text, ebooks, documents, and PDFs — without the bloat of a modern Electron app.
 
 ## Status
 
@@ -17,46 +17,23 @@ RSVP displays words one at a time at a fixed focal point, eliminating eye moveme
 
 ## Features
 
-- Configurable words-per-minute (WPM) with pause, resume, and rewind
+- Configurable words-per-minute (WPM) with play, pause, rewind, and skip controls
 - Support for `.txt`, `.md`, `.epub`, `.docx`, and text-based `.pdf`
-- Per-file reading progress and resume
-- Customizable display font (family and size) and accent color
-- Dark mode toggle
+- Per-file reading progress and resume, with stale-position detection when a file has changed
+- Configurable display font (family and size) and accent color
+- Dark mode and light mode toggle
 - Context window showing surrounding text with current-word highlighting
-- Click-to-seek in context window
+- Click-to-seek in the context window
 - Scrubbable progress bar
+- Threaded file loading (no UI freeze on large EPUB or PDF files)
 - Recent files list and reading statistics
-- Optional AI-generated summaries via Anthropic Claude API
+- Optional AI-generated summaries via the Anthropic Claude API
 - Keyboard-driven controls
-
-## Roadmap
-
-**Phase 1 — Core skeleton (complete)**
-Tkinter window, `.txt` import, WPM control, play/pause/rewind, session persistence, dark mode.
-
-**Phase 2 — More formats and polish (complete)**
-`.md`, `.epub`, `.docx` importers. Transport controls (restart, rewind, play/pause, skip). Recent files window. Reading statistics. Stale-position detection. Additional keyboard shortcuts.
-
-**Phase 3 — PDF support and context window (complete)**
-Text-based PDF import with extraction preview. Context window showing surrounding text with current-word highlighting. Click-to-seek in context window. Scrubbable progress bar. Threaded file loading. Resizable main window.
-
-**Phase 4 — AI integration and settings (complete)**
-Settings panel for font family, font size, and accent color customization. Transport button design overhaul. Optional post-session summaries using a user-supplied Anthropic API key. Hierarchical summarization for long documents. Secure API key storage via OS credential store.
-
-**Phase 5 — Reading optimizations**
-Optimal Recognition Point (ORP) alignment, variable timing based on word length and punctuation, chunked display for function words.
-
-## Non-goals
-
-- OCR or image-based text extraction
-- Mobile platforms
-- Cloud sync or account systems
-- Monetization
 
 ## Requirements
 
 - Python 3.10 or newer
-- Tkinter (included with standard Python installations on Windows and macOS; may require `python3-tk` on Linux)
+- Tkinter (included with standard Python on Windows and macOS; may require `python3-tk` on Linux)
 
 ## Installation
 
@@ -98,25 +75,101 @@ python main.py
 
 RSVPy can generate document summaries using the Anthropic Claude API. This feature is entirely opt-in and requires your own API key.
 
-1. Open Settings (⚙ icon in the status bar, or Ctrl+,)
+1. Open Settings (⚙ icon in the status bar, or `Ctrl+,`)
 2. Enter your Anthropic API key in the AI Summarization section
 3. Click "Test connection" to verify
-4. Use the "Summarize" button that appears in the transport controls after loading a document
+4. A "Summarize" button will appear in the transport controls after loading a document
 
-Your API key is stored securely using your operating system's credential store (Windows Credential Locker, macOS Keychain, or Linux Secret Service). If the OS credential store is unavailable, the key is stored in a file with restricted permissions — it is never written to `config.json`.
+Your API key is stored securely using your operating system's credential store (Windows Credential Locker, macOS Keychain, or Linux Secret Service). If the OS credential store is unavailable, the key is stored in a file with restricted permissions. It is never written to `config.json`.
 
 ## Keyboard Shortcuts
 
-| Key       | Action                     |
-|-----------|----------------------------|
-| Space     | Play / Pause               |
-| Left      | Rewind 5 words             |
-| Right     | Skip forward 5 words       |
-| Home      | Restart from beginning     |
-| Ctrl+O    | Open file                  |
-| Ctrl+R    | Recent files               |
-| Ctrl+T    | Toggle context window      |
-| Ctrl+,    | Open settings              |
+| Key        | Action                     |
+|------------|----------------------------|
+| `Space`    | Play / Pause               |
+| `Left`     | Rewind 5 words             |
+| `Right`    | Skip forward 5 words       |
+| `Home`     | Restart from beginning     |
+| `Ctrl+O`   | Open file                  |
+| `Ctrl+R`   | Recent files               |
+| `Ctrl+T`   | Toggle context window      |
+| `Ctrl+,`   | Open settings              |
+
+## Project Structure
+
+```
+RSVPy/
+├── main.py                   # Entry point
+├── requirements.txt
+├── core/
+│   ├── session.py            # In-memory reading state
+│   ├── summarizer.py         # AI summarization logic
+│   ├── timing.py             # WPM → delay in ms
+│   └── tokenizer.py          # Text → token list
+├── importers/
+│   ├── base.py               # Importer interface
+│   ├── docx.py               # .docx importer
+│   ├── epub.py               # .epub importer
+│   ├── md.py                 # .md importer
+│   ├── pdf.py                # .pdf importer
+│   ├── registry.py           # Importer lookup and extension list
+│   └── txt.py                # .txt importer
+├── storage/
+│   ├── config.py             # User preferences (config.json)
+│   ├── keystore.py           # Secure API key storage
+│   ├── progress.py           # Per-file position (progress.json)
+│   └── stats.py              # Reading statistics (stats.json)
+└── ui/
+    ├── context_window.py     # Source text Toplevel with highlighting
+    ├── dialogs.py            # Modal dialogs (file changed, restart confirm)
+    ├── main_window.py        # Tk root and layout
+    ├── reader_view.py        # Word display widget
+    ├── recents_window.py     # Recent files Toplevel
+    ├── settings_window.py    # Settings panel Toplevel
+    ├── stats_window.py       # Reading statistics Toplevel
+    ├── summary_window.py     # AI summary display Toplevel
+    ├── theme.py              # Theme color definitions
+    └── tooltip.py            # Hover tooltip helper
+```
+
+## Persistence
+
+RSVPy stores three JSON files in the platform-appropriate config directory:
+- **Windows:** `%APPDATA%\RSVPy\`
+- **macOS / Linux:** `$XDG_CONFIG_HOME/RSVPy/` or `~/.config/RSVPy/`
+
+| File              | Contents                                                  |
+|-------------------|-----------------------------------------------------------|
+| `config.json`     | WPM, dark mode, font, accent color, and other preferences |
+| `progress.json`   | Per-file reading position and source hash                 |
+| `stats.json`      | Reading statistics (tokens read, active time, sessions)   |
+| `credentials.json`| API key fallback (only used if OS credential store fails) |
+
+All writes are atomic (temp file + `os.replace`) so a crash mid-write cannot corrupt data.
+
+## Roadmap
+
+**Phase 1 — Core skeleton (complete)**
+Tkinter window, `.txt` import, WPM control, play/pause/rewind, per-file progress, dark mode. Config and progress persistence.
+
+**Phase 2 — More formats and polish (complete)**
+`.md`, `.epub`, `.docx` importers. Transport controls (restart, rewind, play/pause, skip forward). Recent files window. Reading statistics. Stale-position detection with per-file SHA-256 hashing. Additional keyboard shortcuts.
+
+**Phase 3 — PDF support and context window (complete)**
+Text-based PDF import with extraction preview dialog. Context window showing surrounding source text with current-word highlighting. Click-to-seek in context window. Scrubbable progress bar. Threaded file loading (fixes EPUB/PDF freeze). Resizable main window with persisted geometry.
+
+**Phase 4 — AI integration and settings (complete)**
+Settings panel for font family, font size, and accent color customization. Transport button design overhaul with tooltips. Optional post-session summaries using a user-supplied Anthropic API key. Hierarchical summarization for long documents. Secure API key storage via OS credential store.
+
+**Phase 5 — Reading optimizations (planned)**
+Optimal Recognition Point (ORP) alignment, variable timing based on word length and punctuation, chunked display for function words, punctuation-only token handling.
+
+## Non-goals
+
+- OCR or image-based text extraction
+- Mobile platforms
+- Cloud sync or account systems
+- Monetization
 
 ## License
 
