@@ -1,18 +1,27 @@
 """
 Reader view: the big centered word in the middle of the window.
 
-Phase 5: ORP (Optimal Recognition Point) alignment. Instead of a
-single centered label, the word is split into three parts — pre-ORP
-text, the ORP character (highlighted in the accent color), and
-post-ORP text — positioned so the ORP character sits at a fixed
-focal column in the center of the view. Thin vertical tick marks
-above and below the ORP position provide a persistent visual anchor.
+Phase 5: ORP (Optimal Recognition Point) alignment. The word is split
+into three parts — pre-ORP text, the ORP character (highlighted in the
+accent color), and post-ORP text. The ORP character is pinned at a
+fixed pixel coordinate (approximately 38% of the view width) using
+place() for absolute positioning. The pre-ORP label is right-aligned
+*to* that coordinate, and the post-ORP label is left-aligned *from* it.
+
+Unlike a grid layout, this guarantees the ORP character never shifts
+horizontally regardless of the surrounding text content. The vertical
+tick marks sit at exactly the same x-coordinate as the ORP label.
 """
 
 import tkinter as tk
 import tkinter.font as tkfont
 
 from ui.theme import Theme
+
+
+# The ORP focal point as a fraction of the view width. 0.38 places it
+# slightly left of center, matching natural reading fixation.
+ORP_RELX = 0.38
 
 
 def _orp_index(word: str) -> int:
@@ -32,7 +41,7 @@ def _orp_index(word: str) -> int:
 
 
 class ReaderView(tk.Frame):
-    """A three-label layout that displays one word at a time with ORP alignment."""
+    """Displays one word at a time with ORP alignment at a fixed focal point."""
 
     DEFAULT_FONT_SIZE = 36
     DEFAULT_FONT_FAMILY = "Helvetica"
@@ -48,85 +57,132 @@ class ReaderView(tk.Frame):
         self._font_family = font_family or self.DEFAULT_FONT_FAMILY
         self._font_size = font_size or self.DEFAULT_FONT_SIZE
 
+        # Cache the font object for measurement.
+        self._font = tkfont.Font(
+            family=self._font_family,
+            size=self._font_size,
+            weight="bold",
+        )
+
         self._build_layout()
+
+        # Re-position elements whenever the frame resizes.
+        self.bind("<Configure>", self._on_resize)
 
     def _build_layout(self) -> None:
         theme = self._theme
         bold_font = (self._font_family, self._font_size, "bold")
 
-        # Container frame positioned at center of parent frame.
-        self._container = tk.Frame(self, bg=theme.background)
-        self._container.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Top tick mark (above the ORP character).
+        # Top tick mark — pinned at the ORP x-coordinate.
         self._tick_top = tk.Frame(
-            self._container,
+            self,
             bg=theme.accent,
             width=self.TICK_WIDTH,
             height=self.TICK_LENGTH,
         )
-        self._tick_top.grid(row=0, column=1, pady=(0, 2))
 
-        # Three labels for pre-ORP, ORP char, post-ORP.
-        # The ORP label sits in the center column; pre and post flank it.
+        # Pre-ORP label: right-aligned so its right edge meets the ORP point.
         self._pre_label = tk.Label(
-            self._container,
+            self,
             text="",
             font=bold_font,
             bg=theme.background,
             fg=theme.text,
-            anchor="e",    # Right-align so it butts against the ORP char.
+            anchor="e",
         )
-        self._pre_label.grid(row=1, column=0, sticky="e")
 
+        # ORP character label: its left edge starts at the ORP point.
         self._orp_label = tk.Label(
-            self._container,
+            self,
             text="",
             font=bold_font,
             bg=theme.background,
-            fg=theme.accent,  # ORP character highlighted in accent color.
-            anchor="center",
+            fg=theme.accent,
+            anchor="w",
         )
-        self._orp_label.grid(row=1, column=1)
 
+        # Post-ORP label: left-aligned, starts after the ORP character.
         self._post_label = tk.Label(
-            self._container,
+            self,
             text="",
             font=bold_font,
             bg=theme.background,
             fg=theme.text,
-            anchor="w",    # Left-align so it butts against the ORP char.
+            anchor="w",
         )
-        self._post_label.grid(row=1, column=2, sticky="w")
 
-        # Bottom tick mark (below the ORP character).
+        # Bottom tick mark — pinned at the ORP x-coordinate.
         self._tick_bottom = tk.Frame(
-            self._container,
+            self,
             bg=theme.accent,
             width=self.TICK_WIDTH,
             height=self.TICK_LENGTH,
         )
-        self._tick_bottom.grid(row=2, column=1, pady=(2, 0))
 
-        # Give the pre-label a minimum width so short prefixes don't
-        # cause the word to jump around. We measure a reasonable width
-        # using font metrics and set it as minsize on column 0.
-        self._update_min_width()
+        # Initial placement — will be corrected on first <Configure>.
+        self._place_elements()
 
-    def _update_min_width(self) -> None:
-        """Set a minimum column width for the pre-ORP label so the ORP
-        position stays roughly centered even for short words."""
-        font = tkfont.Font(
-            family=self._font_family,
-            size=self._font_size,
-            weight="bold",
+    def _place_elements(self) -> None:
+        """Position all elements using place() at the fixed ORP coordinate."""
+        w = self.winfo_width()
+        h = self.winfo_height()
+
+        # If the widget hasn't been mapped yet, defer.
+        if w <= 1 or h <= 1:
+            return
+
+        orp_x = int(w * ORP_RELX)
+        center_y = h // 2
+
+        # Measure the ORP character height for vertical centering.
+        line_height = self._font.metrics("linespace")
+        half_line = line_height // 2
+
+        # Top tick: centered horizontally on orp_x, above the text.
+        tick_top_y = center_y - half_line - self.TICK_LENGTH - 2
+        self._tick_top.place(
+            x=orp_x - self.TICK_WIDTH // 2,
+            y=tick_top_y,
+            width=self.TICK_WIDTH,
+            height=self.TICK_LENGTH,
         )
-        # Reserve space for ~8 characters on each side, which handles
-        # most words without clipping.
-        char_width = font.measure("W")
-        min_px = char_width * 8
-        self._container.grid_columnconfigure(0, minsize=min_px)
-        self._container.grid_columnconfigure(2, minsize=min_px)
+
+        # Bottom tick: centered horizontally on orp_x, below the text.
+        tick_bot_y = center_y + half_line + 2
+        self._tick_bottom.place(
+            x=orp_x - self.TICK_WIDTH // 2,
+            y=tick_bot_y,
+            width=self.TICK_WIDTH,
+            height=self.TICK_LENGTH,
+        )
+
+        # Pre-ORP label: right edge at orp_x, vertically centered.
+        # anchor="e" means the label's right edge is at (x, y).
+        self._pre_label.place(x=orp_x, y=center_y, anchor="e")
+
+        # ORP label: left edge at orp_x, vertically centered.
+        self._orp_label.place(x=orp_x, y=center_y, anchor="w")
+
+        # Post-ORP label: positioned just after the ORP character.
+        # We measure the ORP character's width and offset from orp_x.
+        self._place_post_label(orp_x, center_y)
+
+    def _place_post_label(self, orp_x: int, center_y: int) -> None:
+        """Position the post-ORP label immediately after the ORP character."""
+        orp_text = self._orp_label.cget("text")
+        if orp_text:
+            orp_char_width = self._font.measure(orp_text)
+        else:
+            orp_char_width = 0
+        self._post_label.place(
+            x=orp_x + orp_char_width,
+            y=center_y,
+            anchor="w",
+        )
+
+    def _on_resize(self, _event: tk.Event) -> None:
+        """Re-pin elements when the frame changes size."""
+        self._place_elements()
 
     def show(self, word: str) -> None:
         """Display the given word with ORP alignment."""
@@ -144,6 +200,15 @@ class ReaderView(tk.Frame):
         self._orp_label.config(text=orp_char)
         self._post_label.config(text=post_text)
 
+        # Re-position the post label since the ORP character may have
+        # a different width than the previous one.
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w > 1 and h > 1:
+            orp_x = int(w * ORP_RELX)
+            center_y = h // 2
+            self._place_post_label(orp_x, center_y)
+
     def clear(self) -> None:
         self._pre_label.config(text="")
         self._orp_label.config(text="")
@@ -153,7 +218,6 @@ class ReaderView(tk.Frame):
         """Re-color every widget to match the new theme."""
         self._theme = theme
         self.config(bg=theme.background)
-        self._container.config(bg=theme.background)
         self._pre_label.config(bg=theme.background, fg=theme.text)
         self._orp_label.config(bg=theme.background, fg=theme.accent)
         self._post_label.config(bg=theme.background, fg=theme.text)
@@ -171,4 +235,13 @@ class ReaderView(tk.Frame):
         new_font = (self._font_family, self._font_size, "bold")
         for label in (self._pre_label, self._orp_label, self._post_label):
             label.config(font=new_font)
-        self._update_min_width()
+
+        # Rebuild the measurement font.
+        self._font.config(
+            family=self._font_family,
+            size=self._font_size,
+            weight="bold",
+        )
+
+        # Re-position everything since line height may have changed.
+        self._place_elements()
