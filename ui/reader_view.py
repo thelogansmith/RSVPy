@@ -46,7 +46,7 @@ class ReaderView(tk.Frame):
     DEFAULT_FONT_SIZE = 36
     DEFAULT_FONT_FAMILY = "Helvetica"
 
-    TICK_LENGTH = 10    # Vertical tick mark height in pixels.
+    TICK_LENGTH = 20    # Vertical tick mark height in pixels.
     TICK_WIDTH = 2      # Vertical tick mark width.
 
     def __init__(self, parent: tk.Misc, theme: Theme,
@@ -156,26 +156,33 @@ class ReaderView(tk.Frame):
             height=self.TICK_LENGTH,
         )
 
-        # Pre-ORP label: right edge at orp_x, vertically centered.
-        # anchor="e" means the label's right edge is at (x, y).
-        self._pre_label.place(x=orp_x, y=center_y, anchor="e")
+        # All three text labels are positioned relative to orp_x, but
+        # offset so the ORP *character's center* sits on orp_x (matching
+        # the tick marks). We measure the current ORP character's width
+        # and shift everything by half that amount.
+        self._place_text_labels(orp_x, center_y)
 
-        # ORP label: left edge at orp_x, vertically centered.
-        self._orp_label.place(x=orp_x, y=center_y, anchor="w")
-
-        # Post-ORP label: positioned just after the ORP character.
-        # We measure the ORP character's width and offset from orp_x.
-        self._place_post_label(orp_x, center_y)
-
-    def _place_post_label(self, orp_x: int, center_y: int) -> None:
-        """Position the post-ORP label immediately after the ORP character."""
+    def _place_text_labels(self, orp_x: int, center_y: int) -> None:
+        """Position all three text labels so the ORP character is centered on orp_x."""
         orp_text = self._orp_label.cget("text")
         if orp_text:
             orp_char_width = self._font.measure(orp_text)
         else:
             orp_char_width = 0
+
+        half_orp = orp_char_width // 2
+
+        # ORP label: centered on orp_x. anchor="w" so we place its
+        # left edge at (orp_x - half_orp).
+        orp_left = orp_x - half_orp
+        self._orp_label.place(x=orp_left, y=center_y, anchor="w")
+
+        # Pre-ORP label: right edge butts against ORP label's left edge.
+        self._pre_label.place(x=orp_left, y=center_y, anchor="e")
+
+        # Post-ORP label: left edge starts after ORP label's right edge.
         self._post_label.place(
-            x=orp_x + orp_char_width,
+            x=orp_left + orp_char_width,
             y=center_y,
             anchor="w",
         )
@@ -200,14 +207,14 @@ class ReaderView(tk.Frame):
         self._orp_label.config(text=orp_char)
         self._post_label.config(text=post_text)
 
-        # Re-position the post label since the ORP character may have
-        # a different width than the previous one.
+        # Re-position all three labels since the ORP character changed
+        # and has a different width.
         w = self.winfo_width()
         h = self.winfo_height()
         if w > 1 and h > 1:
             orp_x = int(w * ORP_RELX)
             center_y = h // 2
-            self._place_post_label(orp_x, center_y)
+            self._place_text_labels(orp_x, center_y)
 
     def clear(self) -> None:
         self._pre_label.config(text="")
