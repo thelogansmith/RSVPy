@@ -1,6 +1,6 @@
 # Phase 3 Specification
 
-**Status:** Not started
+**Status:** Completed
 **Goal:** Add PDF support with an extraction preview step, a context
 window that shows surrounding text during playback, and threaded file
 loading to fix the EPUB performance problem. Phase 3 turns RSVPy from
