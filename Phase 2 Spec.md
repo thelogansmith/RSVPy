@@ -1,6 +1,6 @@
 # Phase 2 Specification
 
-**Status:** In Development
+**Status:** Completed
 **Goal:** Extend RSVPy from a single-format reader into a multi-format
 reader with transport controls, reliable resume behavior, and basic
 reading history. Lay the groundwork for the context window that arrives

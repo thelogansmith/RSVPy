@@ -1,11 +1,11 @@
 # Phase 5 Specification
 
-**Status:** Not started
+**Status:** Completed
 **Goal:** Optimize the RSVP reading experience with Optimal Recognition
 Point alignment, variable timing based on word length and punctuation,
-chunked display for function words, and punctuation-only token handling.
-Phase 5 turns RSVPy from a uniform word-by-word flasher into a reader
-that adapts its pacing and layout to the structure of the text.
+and punctuation-only token handling. Phase 5 turns RSVPy from a uniform
+word-by-word flasher into a reader that adapts its pacing and layout
+to the structure of the text.
 
 This document defines scope, architecture decisions, and build order
 for Phase 5. Anything not listed here is out of scope.
@@ -20,10 +20,16 @@ for Phase 5. Anything not listed here is out of scope.
 - Variable timing based on token type (sentence end, paragraph end)
   and word length
 - Punctuation-only token handling (new token type, reduced timing)
-- Chunked display for short function words alongside content words
 - ORP character highlighting in the accent color
-- Settings panel additions for variable timing toggle and chunk
-  display toggle
+- Settings panel additions for variable timing toggle
+
+### Removed during development
+
+- **Chunked display for short function words.** Implemented and
+  tested; removed before Phase 5 was marked complete. Function words
+  flashed too fast to register as part of the chunk, and the variable
+  display widths interfered with ORP alignment. The original design
+  is preserved further down in this document for the record.
 
 ### Out of scope
 
@@ -80,9 +86,11 @@ All three labels share the same font (the user's configured font
 family and size from Phase 4). The ORP label is colored with the
 theme's accent color; the other two use the standard text color.
 
-The focal point is a fixed x-position at approximately 35–40% of the
-reader view width. This mirrors the natural left-biased fixation
-point of Western-language readers.
+The focal point is a fixed x-position at the configured ORP_RELX
+fraction of the reader view width. The implementation uses 0.50
+(true center). Earlier drafts targeted ~38% (left-of-center), which
+mirrors natural Western fixation, but center alignment proved more
+robust against layout drift across font sizes.
 
 **Why not a Canvas?** A Canvas offers pixel-precise positioning but
 complicates font handling, text rendering, and the existing
@@ -96,24 +104,23 @@ labels avoid font measurement entirely; Tkinter handles the layout.
 
 ### ORP calculation
 
-The ORP position within a word follows standard RSVP research:
+The ORP position within a word is computed from word length. The
+implementation uses a simple formula: position 0 for words of 3 or
+fewer characters, and `max(1, len // 3 - 1)` for longer words. This
+places the ORP roughly at the "left of center" of the word, which is
+where skilled readers naturally fixate.
 
-| Word length | ORP position (0-indexed) |
-|-------------|--------------------------|
-| 1           | 0                        |
-| 2–5         | 1                        |
-| 6–9         | 2                        |
-| 10–13       | 3                        |
-| 14+         | 4                        |
+```python
+def _orp_index(word: str) -> int:
+    n = len(word)
+    if n <= 3:
+        return 0
+    return max(1, n // 3 - 1)
+```
 
-This places the ORP roughly at the "left of center" of the word,
-which is where skilled readers naturally fixate. The exact table
-can be adjusted by testing, but this is the standard starting point.
-
-The ORP is computed from the display text of the token. For chunked
-display (function word + content word), the ORP is computed from the
-content word only, and the function word is part of the pre-ORP
-segment.
+The formula was chosen over a fixed lookup table because it's simpler
+to maintain, gives nearly identical results across the relevant range,
+and degrades gracefully for very long words without a special case.
 
 ### Variable timing: multipliers on base delay
 
@@ -129,18 +136,20 @@ def delay_ms(wpm: int,
 **Token type multipliers:**
 - `WORD`: 1.0× (no change)
 - `SENTENCE_END`: 1.5×
-- `PARAGRAPH_END`: 2.0×
-- `PUNCTUATION_ONLY`: 0.3× (brief flash, not skipped entirely)
+- `PARAGRAPH_END`: 2.5×
+- `PUNCTUATION_ONLY`: 0.25× with a 50ms floor (brief flash, not
+  skipped entirely)
 
 **Word length adjustment:**
 - 1–3 characters: 0.85× (short words need less fixation time)
-- 4–7 characters: 1.0× (baseline)
-- 8–11 characters: 1.15×
-- 12+ characters: 1.3×
+- 7+ characters: 1.0× + 4% per character beyond 6 (longer words
+  linger proportionally)
+- 4–6 characters: 1.0× (baseline)
 
-The final delay is: `base_delay × type_multiplier × length_multiplier`.
-Clamped to a minimum of 40ms to prevent imperceptible flashes even at
-1000 WPM with short punctuation tokens.
+The final delay is `base_delay × type_multiplier × length_multiplier`.
+Token-type multipliers for SENTENCE_END and PARAGRAPH_END take
+precedence over word-length adjustment; those pauses are about
+comprehension rhythm, not word complexity.
 
 The existing call sites that pass only `wpm` continue to work
 unchanged because both new parameters default to `None`, which
@@ -173,13 +182,21 @@ Token count, indices, and source offsets are **unchanged**. This is
 critical — saved positions and progress percentages must remain valid
 across the Phase 4 → Phase 5 transition.
 
-### Chunked display: function word grouping
+### Chunked display: function word grouping (REMOVED)
 
-Short function words are grouped with the following content word for
-display. Instead of showing "the" then "cat" as two separate flashes,
-show "the cat" as a single display unit.
+> **Status: Removed.** Implemented and tested during Phase 5
+> development; removed before Phase 5 was marked complete. Two
+> observed problems: function words flashed too fast to register as
+> part of the chunk, and the variable display widths interfered with
+> ORP alignment. The design is preserved below as a record of what
+> was attempted and why it didn't work.
 
-**Function word list** (hard-coded, English-only for Phase 5):
+Short function words were going to be displayed alongside the
+following content word for display. Instead of showing "the" then
+"cat" as two separate flashes, show "the cat" as a single display
+unit.
+
+**Function word list** (hard-coded, English-only):
 
 ```python
 FUNCTION_WORDS = frozenset({
@@ -194,51 +211,33 @@ FUNCTION_WORDS = frozenset({
 })
 ```
 
-**Grouping rules:**
+**Grouping rules (as designed):**
 - A function word is grouped with the **next** token if:
   - The next token exists and is not itself a function word
   - The next token is not a `PUNCTUATION_ONLY` token
-  - The combined display length ≤ 20 characters (prevents absurd
-    widths from long content words)
+  - The combined display length ≤ 20 characters
 - A function word at the end of the stream is displayed alone.
 - A function word followed by another function word is displayed
-  alone (to avoid triple-word chunks).
+  alone.
 
-**Implementation:** a display-time grouping pass, not a tokenizer
-change. The token list remains unmodified. In `_tick()`, before
-displaying the current token, check if it qualifies for chunking.
-If so, advance the position by 2 instead of 1 and display both
-words joined by a space.
-
-This keeps the token stream, progress tracking, source offsets,
-context window highlighting, and click-to-seek all working without
-modification. The only changes are in `_tick()` and the reader view.
-
-**ORP interaction:** when displaying a chunk like "the cat", the
-ORP is calculated on the content word ("cat"), and the function word
-is prepended to the pre-ORP segment. So the display would be:
-
-```
-         [the ca][t][ ]
-                  ^
-             ORP (accent)
-```
+The grouping was implemented as a display-time pass in `_tick()`
+rather than a tokenizer change, so the token stream, progress
+tracking, source offsets, context window highlighting, and
+click-to-seek all worked without modification. The reading
+experience is what failed: the function word effectively became
+invisible at any meaningful WPM, and the wider chunks pulled the
+ORP character off its anchor more than the alignment system could
+absorb gracefully.
 
 ### Settings additions
 
-Two new toggles in the Reading section of the settings panel:
+One new toggle in the Reading section of the settings panel:
 
 - **Variable timing:** checkbox, default on. When off, all tokens
   get the flat `60000 / wpm` delay regardless of type or length.
   Stored as `variable_timing` in config.
-- **Chunk function words:** checkbox, default on. When off, every
-  token is displayed individually. Stored as `chunk_display` in
-  config.
 
-ORP alignment has no toggle — it is always active once implemented.
-Users who prefer centered display can be accommodated in a future
-phase if demand exists, but for Phase 5, ORP is the default and only
-mode.
+ORP alignment has no toggle — it is always active.
 
 ---
 
@@ -258,12 +257,11 @@ class TokenType(Enum):
 
 ```json
 {
-  "variable_timing": true,
-  "chunk_display": true
+  "variable_timing": true
 }
 ```
 
-Both default to `true`. Stored alongside existing keys.
+Defaults to `true`. Stored alongside existing keys.
 
 ### No changes to Token fields, Session, progress, or stats
 
@@ -292,9 +290,6 @@ After:      [     int][e][resting       ]    (ORP-aligned)
                   accent color
 ```
 
-The focal point is fixed at ~38% of the reader view width, providing
-a slight left-of-center bias that matches natural reading fixation.
-
 The ORP works with all fonts available in the Phase 4 settings panel.
 `update_font()` applies to all three labels simultaneously.
 
@@ -305,14 +300,14 @@ length:
 
 - **Sentence ends** (`.`, `!`, `?`) pause 50% longer, giving the
   reader time to process the end of a thought.
-- **Paragraph ends** pause 100% longer, marking a clear structural
+- **Paragraph ends** pause 150% longer, marking a clear structural
   break.
 - **Short words** (1–3 chars) flash 15% faster — they're recognized
   in peripheral vision and need less fixation.
-- **Long words** (12+ chars) linger 30% longer for adequate
-  processing.
-- **Punctuation-only tokens** flash at 30% of normal speed — visible
-  but not disruptive.
+- **Long words** (7+ chars) linger proportionally longer (4% per
+  character beyond 6) for adequate processing.
+- **Punctuation-only tokens** flash at 25% of normal speed (with a
+  50ms floor) — visible but not disruptive.
 
 Timing is configurable: the "Variable timing" toggle in settings
 switches between adaptive timing (on) and flat timing (off). The
@@ -329,23 +324,6 @@ same duration as a real word.
 
 When variable timing is disabled, punctuation-only tokens display at
 the standard flat rate (matching Phase 4 behavior).
-
-### Chunked display for function words
-
-Common short function words are displayed alongside the following
-content word as a single unit:
-
-```
-Without chunking:   "the" → "cat" → "sat" → "on" → "the" → "mat"
-With chunking:      "the cat" → "sat" → "on the" → "mat"
-```
-
-The chunk counts as one display step for timing purposes. The delay
-is based on the content word's length and type, not the function
-word. Progress advances by 2 tokens per chunk.
-
-Chunking is configurable via the "Chunk function words" toggle in
-settings. When off, every token displays individually.
 
 ---
 
@@ -364,22 +342,8 @@ settings. When off, every token displays individually.
 ├══════════════════════════════════════════════════════════════════════╤
 ```
 
-A thin vertical guide line at the focal point (1px, muted color)
-provides a persistent visual anchor. This line is always visible,
-even when no word is displayed. Optional — implement if it aids
-readability, omit if it feels cluttered.
-
-### Chunked display with ORP
-
-```
-│                    the c a t                                         │
-│                          ^                                           │
-│                     (accent color, on content word ORP)              │
-```
-
-The function word is displayed in the standard text color, flush
-against the content word. The ORP calculation ignores the function
-word — it is positioned as a prefix.
+A thin vertical guide line (the tick marks above and below the focal
+point) provides a persistent visual anchor at the ORP column.
 
 ### Settings additions
 
@@ -388,10 +352,9 @@ word — it is positioned as a prefix.
 │  ─────────────────────────────────────   │
 │  [✓] Confirm before restarting           │
 │  [✓] Variable timing                     │
-│  [✓] Chunk function words                │
 ```
 
-Two checkboxes added below the existing restart confirmation toggle.
+One checkbox added below the existing restart confirmation toggle.
 
 ---
 
@@ -421,31 +384,21 @@ Each step leaves the app in a runnable, shippable state.
    paragraph boundaries.
 
 3. **ORP alignment.** Redesign `ReaderView` from a single label to
-   the three-label layout. Implement the ORP position lookup table.
-   Wire accent color to the ORP label. Ensure `update_font()` and
+   the three-label layout. Implement the ORP position formula. Wire
+   accent color to the ORP label. Ensure `update_font()` and
    `apply_theme()` still work correctly. Ensure `show()` and
    `clear()` maintain their existing call signatures so
    `main_window.py` needs no changes beyond the reader view itself.
 
-4. **Chunked display.** Define the function word set. Implement the
-   grouping check in `_tick()`. When chunking, advance position by 2
-   and display both words joined by a space. Compute ORP on the
-   content word with the function word as a prefix. Add
-   `chunk_display` config key and settings checkbox. Edge cases:
-   function word at end of stream, two consecutive function words,
-   chunk exceeding 20 characters.
-
-5. **Polish and docs.** README update (Phase 5 status, new features).
+4. **Polish and docs.** README update (Phase 5 status, new features).
    Test with real documents — prose, technical writing, PDF extracts,
    EPUBs. Verify that progress tracking, context window highlighting,
    click-to-seek, and save/resume all work correctly with the new
-   timing and display logic. Confirm that disabling both toggles
-   restores exact Phase 4 behavior.
+   timing and display logic. Confirm that disabling the variable
+   timing toggle restores exact Phase 4 behavior.
 
-Steps 1–2 are low-risk and immediately improve the reading experience.
-Step 3 is the most visible change. Step 4 is the most complex and
-could be deferred to a later iteration if the first three steps
-already deliver a substantially better reading experience.
+A fifth step — chunked function-word display — was attempted but
+removed; see the Removed section above.
 
 ---
 
@@ -453,8 +406,7 @@ already deliver a substantially better reading experience.
 
 Everything from Phases 1–4 still applies. Additions:
 
-- `variable_timing` and `chunk_display` booleans saved to config on
-  change and on close.
+- `variable_timing` boolean saved to config on change and on close.
 - No changes to progress or stats persistence. Token counts and
   positions are unchanged despite the new timing and display logic.
 
@@ -472,31 +424,23 @@ percentage. No migration logic is needed.
 
 ### Config compatibility
 
-New keys (`variable_timing`, `chunk_display`) are added to
-`DEFAULT_CONFIG` and merged on load, so existing config files from
-Phase 4 get the new defaults automatically. No migration needed.
+The new key (`variable_timing`) is added to `DEFAULT_CONFIG` and
+merged on load, so existing config files from Phase 4 get the new
+default automatically. No migration needed.
 
 ---
 
 ## Open Questions
 
-These don't block starting; decide during implementation:
+These were answered during implementation:
 
-- **Should the ORP guide line be visible?** A thin vertical line at
-  the focal point helps the eye lock onto the right position. But it
-  might feel cluttered. Try it and decide visually. Leaning yes.
-- **Should function word chunking work for non-English languages?**
-  Phase 5 targets English only. The function word list is hard-coded.
-  Internationalization can be added later with locale-specific lists.
-- **Should the timing multipliers be user-configurable?** Leaning no
-  for Phase 5 — the presets should be tuned by testing. If users
-  request customization, it can be added to the settings panel later
-  with a "Timing" section and sliders.
+- **Should the ORP guide line be visible?** Yes. The thin vertical
+  tick marks above and below the focal point help the eye lock onto
+  the right position without feeling cluttered.
+- **Should the timing multipliers be user-configurable?** No.
+  Presets are tuned by testing. If users request customization later,
+  it can be added to the settings panel with sliders.
 - **How should ORP interact with very long words (20+ chars)?** The
-  ORP position caps at index 4. For a 25-character word, this still
-  puts the fixation near the left side, which is correct for reading.
-  No special handling needed.
-- **Should chunked display affect the stats `tokens_read` counter?**
-  Leaning: count each token individually, so a chunk increments by 2.
-  "Tokens read" measures how much of the document was consumed, not
-  how many display flashes occurred.
+  formula degrades gracefully; for a 25-character word it still
+  places the fixation near the left side, which is correct for
+  reading. No special handling needed.

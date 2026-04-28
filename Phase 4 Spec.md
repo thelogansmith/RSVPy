@@ -1,6 +1,6 @@
 # Phase 4 Specification
 
-**Status:** Not started
+**Status:** Completed
 **Goal:** Add optional AI-powered post-session summaries, a settings
 panel for customizing the reading experience, and a design overhaul
 of the transport controls. Phase 4 transforms RSVPy from a functional
