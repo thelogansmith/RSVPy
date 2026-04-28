@@ -389,24 +389,4 @@ Everything from Phases 1–3 still applies. Additions:
   change.
 - Summaries themselves are **not** persisted to disk.
 
----
-
-## Open Questions
-
-These don't block starting; decide during implementation:
-
-- **Should the API key be stored in config.json or a separate
-  secrets file?** config.json is simplest and consistent with the
-  app's approach. A separate file would allow different permissions
-  but adds complexity. Leaning config.json for Phase 4.
-- **Should summaries be cached to disk?** Leaning no — they're
-  cheap to regenerate, and caching adds staleness concerns. But
-  if generation is slow (large documents), caching could improve UX.
-- **What model to use?** For Anthropic: `claude-sonnet-4-20250514` is
-  a good balance of quality and speed. For OpenAI: `gpt-4o-mini` for
-  cost efficiency. Make configurable if time permits.
-- **Should the summary window replace the context window or coexist?**
-  Leaning coexist — they serve different purposes (navigation vs.
-  comprehension). But screen real estate is a concern.
-- **Exact transport button labels?** The developer should choose.
-  Present 2-3 options and let them pick.
+ Present 2-3 options and let them pick.
