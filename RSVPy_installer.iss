@@ -7,11 +7,11 @@
 ;  Expects the PyInstaller output at dist\RSVPy\ relative to
 ;  this file. Run PyInstaller first (see guide).
 ;
-;  Output: Output\Setup_RSVPy_0.1.0-beta.exe
+;  Output: RSVPy_1.0.1-beta.exe
 ; ============================================================
 
 #define MyAppName "RSVPy"
-#define MyAppVersion "0.1.0-beta"
+#define MyAppVersion "1.0.1-beta"
 #define MyAppPublisher "thelogansmith"
 #define MyAppURL "https://github.com/thelogansmith/RSVPy"
 #define MyAppExeName "RSVPy.exe"
