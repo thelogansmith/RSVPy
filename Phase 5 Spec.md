@@ -427,20 +427,3 @@ percentage. No migration logic is needed.
 The new key (`variable_timing`) is added to `DEFAULT_CONFIG` and
 merged on load, so existing config files from Phase 4 get the new
 default automatically. No migration needed.
-
----
-
-## Open Questions
-
-These were answered during implementation:
-
-- **Should the ORP guide line be visible?** Yes. The thin vertical
-  tick marks above and below the focal point help the eye lock onto
-  the right position without feeling cluttered.
-- **Should the timing multipliers be user-configurable?** No.
-  Presets are tuned by testing. If users request customization later,
-  it can be added to the settings panel with sliders.
-- **How should ORP interact with very long words (20+ chars)?** The
-  formula degrades gracefully; for a 25-character word it still
-  places the fixation near the left side, which is correct for
-  reading. No special handling needed.
