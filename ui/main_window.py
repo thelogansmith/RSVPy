@@ -784,6 +784,12 @@ class MainWindow:
             self._theme,
             on_seek=self._on_context_seek,
             on_close=self._on_context_closed,
+            callbacks={
+                "play_pause": self._on_play_pause,
+                "rewind": self._on_rewind,
+                "skip": self._on_skip,
+                "restart": self._on_restart,
+            },
         )
         self._context_window_open = True
 

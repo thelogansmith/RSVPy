@@ -10,6 +10,10 @@ The window stays open across file loads (content refreshes) and its
 open/closed state is persisted in config. It does not affect playback
 when closed.
 
+Playback keyboard shortcuts (Space, Left, Right, Home) are bound on
+the Toplevel so the user can control playback while the context window
+has focus, without needing to click back to the main window.
+
 Phase 3, steps 6-8.
 """
 
@@ -35,6 +39,7 @@ class ContextWindow:
         theme: Theme,
         on_seek: Callable[[int], None],
         on_close: Callable[[], None],
+        callbacks: dict[str, Callable[[], None]] | None = None,
     ) -> None:
         """Create the context window.
 
@@ -44,6 +49,12 @@ class ContextWindow:
 
         on_close is called when the user closes the window so the main
         window can update its bookkeeping.
+
+        callbacks is an optional dict of playback actions to bind as
+        keyboard shortcuts on this Toplevel. Recognized keys:
+            "play_pause", "rewind", "skip", "restart"
+        This lets the user control playback without switching focus
+        back to the main window.
         """
         self._theme = theme
         self._on_seek = on_seek
@@ -59,6 +70,27 @@ class ContextWindow:
         self.top.bind("<Escape>", lambda _e: self._on_close())
 
         self._build_widgets()
+        self._bind_playback_shortcuts(callbacks)
+
+    def _bind_playback_shortcuts(
+        self, callbacks: dict[str, Callable[[], None]] | None
+    ) -> None:
+        """Bind playback keyboard shortcuts on the Toplevel.
+
+        Mirrors the shortcuts on the main window so playback is
+        controllable from either window.
+        """
+        if not callbacks:
+            return
+
+        if "play_pause" in callbacks:
+            self.top.bind("<space>", lambda _e: callbacks["play_pause"]())
+        if "rewind" in callbacks:
+            self.top.bind("<Left>", lambda _e: callbacks["rewind"]())
+        if "skip" in callbacks:
+            self.top.bind("<Right>", lambda _e: callbacks["skip"]())
+        if "restart" in callbacks:
+            self.top.bind("<Home>", lambda _e: callbacks["restart"]())
 
     def _build_widgets(self) -> None:
         theme = self._theme
