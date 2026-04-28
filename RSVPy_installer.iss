@@ -11,7 +11,7 @@
 ; ============================================================
 
 #define MyAppName "RSVPy"
-#define MyAppVersion "1.0.1-beta"
+#define MyAppVersion "beta_v1.0.1"
 #define MyAppPublisher "thelogansmith"
 #define MyAppURL "https://github.com/thelogansmith/RSVPy"
 #define MyAppExeName "RSVPy.exe"
@@ -27,8 +27,8 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 LicenseFile=LICENSE
-OutputDir=Output
-OutputBaseFilename=Setup_{#MyAppName}_{#MyAppVersion}
+OutputDir=RSVPy
+OutputBaseFilename={#MyAppName}_{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
